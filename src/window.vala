@@ -30,8 +30,10 @@ namespace Singularity.Apps {
         private Singularity.Widgets.ChipBar? _tab_chips = null;
         private HashTable<unowned EditorTab, string>? _tab_to_chip = null;
         private HashTable<string, unowned EditorTab>? _chip_to_tab = null;
+        private HashTable<unowned EditorTab, ulong>? _markdown_handlers = null;
         private uint _chip_counter = 0;
         private bool _suppress_chip_sync = false;
+        private bool _session_owner = true;
 
         private void sync_md_btn_visibility () {
             if (_md_btn == null) return;
@@ -39,13 +41,15 @@ namespace Singularity.Apps {
             _md_btn.visible = (tab != null && tab.is_markdown);
         }
 
-        public EditWindow (EditApp app, GLib.Settings? settings) {
+        public EditWindow (EditApp app, GLib.Settings? settings, bool restore_session = true) {
             Object (application: app);
             _app      = app;
             _settings = settings;
+            _session_owner = restore_session;
+            if (!restore_session) _sidebar_visible = false;
             _build_ui ();
             close_request.connect(_on_close_request);
-            _restore_session ();
+            if (restore_session) _restore_session ();
         }
 
         private void _build_ui () {
@@ -141,14 +145,8 @@ namespace Singularity.Apps {
         }
 
         private void _setup_toolbar () {
-            // EXPERIMENT: titlebar is replaced by the bubble bar set up in
-            // _build_ui(). All toolbar buttons become bubbles between the
-            // drag and close handles. The tab strip moves to the bottom
-            // of the editor area, just above the statusbar.
-            //
-            // To revert: restore the previous toolbar.pack_*() calls and
-            // remove the bubble wiring (flat/show_close/_bubble_bar in
-            // _build_ui()).
+            var sidebar_btn = add_bubble_icon ("sidebar-show-symbolic", "Toggle Sidebar (F9)", () => {});
+            sidebar_btn.action_name = "app.toggle-sidebar";
 
             var new_btn  = add_bubble_icon ("document-new-symbolic",  "New (Ctrl+N)",   () => {});
             new_btn.action_name  = "app.new-file";
@@ -188,11 +186,13 @@ namespace Singularity.Apps {
             _tab_chips.hexpand = true;
             // Tabs can be reordered by dragging the chips.
             _tab_chips.reorderable = true;
+            _tab_chips.detachable = true;
             // File names are precious - show them in full; the bar
             // scrolls horizontally when tabs overflow.
             _tab_chips.ellipsize_labels = false;
             _tab_to_chip = new HashTable<unowned EditorTab, string> (direct_hash, direct_equal);
             _chip_to_tab = new HashTable<string, unowned EditorTab> (str_hash, str_equal);
+            _markdown_handlers = new HashTable<unowned EditorTab, ulong> (direct_hash, direct_equal);
 
             _tab_chips.chip_activated.connect ((id) => {
                 if (_suppress_chip_sync) return;
@@ -205,6 +205,10 @@ namespace Singularity.Apps {
             _tab_chips.chip_closed.connect ((id) => {
                 var t = _chip_to_tab.lookup (id);
                 if (t != null) _request_close_tab (t);
+            });
+            _tab_chips.chip_detached.connect ((id) => {
+                var t = _chip_to_tab.lookup (id);
+                if (t != null) _app.detach_tab (this, t);
             });
             // Mirror a chip drag-reorder onto the underlying notebook pages.
             _tab_chips.chips_reordered.connect ((ids) => {
@@ -259,18 +263,44 @@ namespace Singularity.Apps {
                     }
                 }
             }
-            var tab = new EditorTab (file, _settings);
+            _attach_tab (new EditorTab (file, _settings));
+        }
+
+        private void _attach_tab (EditorTab tab) {
             tab_container.add_tab (tab, tab.title);
             tab.state_changed.connect  (_on_tab_state_changed);
             tab.cursor_changed.connect (_on_tab_cursor_changed);
-            // is_markdown is set asynchronously in load_file; sync the toolbar
-            // button when it flips so the user sees it appear for .md files.
-            tab.notify["is-markdown"].connect (() => sync_md_btn_visibility ());
+            ulong handler = tab.notify["is-markdown"].connect (() => sync_md_btn_visibility ());
+            _markdown_handlers.insert (tab, handler);
             tab_container.notebook.set_current_page (
                 tab_container.notebook.page_num (tab));
             if (_settings != null && _settings.get_boolean ("show-minimap"))
                 tab.set_minimap_visible (true);
             sync_md_btn_visibility ();
+        }
+
+        private void _disconnect_tab (EditorTab tab) {
+            tab.state_changed.disconnect  (_on_tab_state_changed);
+            tab.cursor_changed.disconnect (_on_tab_cursor_changed);
+            ulong handler = _markdown_handlers.lookup (tab);
+            if (handler != 0) tab.disconnect (handler);
+            _markdown_handlers.remove (tab);
+        }
+
+        internal bool release_tab (EditorTab tab) {
+            if (tab_container.notebook.page_num (tab) < 0) return false;
+            _disconnect_tab (tab);
+            tab_container.remove_tab (tab);
+            if (tab_container.get_n_pages () == 0) {
+                _root_stack.visible_child_name = "welcome";
+                set_title (_("Edit"));
+            }
+            return true;
+        }
+
+        internal void adopt_tab (EditorTab tab) {
+            _attach_tab (tab);
+            if (tab.file != null) _file_browser.navigate_to_file_dir (tab.file);
         }
 
         public void open_file (GLib.File file) {
@@ -377,8 +407,7 @@ namespace Singularity.Apps {
         }
 
         private void _do_close_tab (EditorTab tab) {
-            tab.state_changed.disconnect  (_on_tab_state_changed);
-            tab.cursor_changed.disconnect (_on_tab_cursor_changed);
+            _disconnect_tab (tab);
             tab_container.remove_tab (tab);
             if (tab_container.get_n_pages () == 0) {
                 _root_stack.visible_child_name = "welcome";
@@ -452,6 +481,8 @@ namespace Singularity.Apps {
         public void toggle_sidebar () {
             _sidebar_visible = !_sidebar_visible;
             set_sidebar_visible (_sidebar_visible);
+            if (_session_owner && _settings != null)
+                _settings.set_boolean ("sidebar-visible", _sidebar_visible);
         }
 
         public void toggle_minimap () {
@@ -824,7 +855,7 @@ namespace Singularity.Apps {
         }
 
         public void save_session () {
-            if (_settings == null) return;
+            if (!_session_owner || _settings == null) return;
 
             string[] uris = {};
             int n = tab_container.get_n_pages ();

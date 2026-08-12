@@ -9,7 +9,7 @@ namespace Singularity.Apps {
     // EditApp - Singularity.Application subclass
     // =========================================================================
     public class EditApp : Singularity.Application {
-        private EditWindow?    edit_win;
+        private weak EditWindow? edit_win;
         private GLib.Settings? settings;
         private GLib.Settings? desktop_settings;
 
@@ -31,15 +31,15 @@ namespace Singularity.Apps {
             if (desktop_settings != null) {
                 desktop_settings.changed["accent-color"].connect ((_k) => {
                     if (settings != null && settings.get_string ("color-scheme") == "auto")
-                        edit_win?.refresh_all_schemes ();
+                        refresh_all_windows ();
                 });
                 desktop_settings.changed["custom-accent-color"].connect ((_k) => {
                     if (settings != null && settings.get_string ("color-scheme") == "auto")
-                        edit_win?.refresh_all_schemes ();
+                        refresh_all_windows ();
                 });
                 desktop_settings.changed["dark-mode"].connect ((_k) => {
                     if (settings != null && settings.get_string ("color-scheme") == "auto")
-                        edit_win?.refresh_all_schemes ();
+                        refresh_all_windows ();
                 });
             }
         }
@@ -124,7 +124,7 @@ namespace Singularity.Apps {
             add_act ("revert",         on_revert);
 
             var act_settings = new SimpleAction ("settings", null);
-            act_settings.activate.connect (() => edit_win?.show_preferences ());
+            act_settings.activate.connect (() => active_edit_window ()?.show_preferences ());
             add_action (act_settings);
         }
 
@@ -170,43 +170,69 @@ namespace Singularity.Apps {
                 edit_win.present ();
                 return;
             }
-            edit_win = new EditWindow (this, settings);
-            edit_win.present ();
+            var window = new EditWindow (this, settings);
+            edit_win = window;
+            window.present ();
         }
 
         public override void open (GLib.File[] files, string hint) {
             activate ();
+            var window = active_edit_window ();
+            if (window == null) return;
             foreach (var f in files)
-                edit_win.add_tab (f);
+                window.add_tab (f);
+        }
+
+        private EditWindow? active_edit_window () {
+            var active = get_active_window () as EditWindow;
+            if (active != null) return active;
+            foreach (var window in get_windows ()) {
+                var edit_window = window as EditWindow;
+                if (edit_window != null) return edit_window;
+            }
+            return null;
+        }
+
+        private void refresh_all_windows () {
+            foreach (var window in get_windows ())
+                (window as EditWindow)?.refresh_all_schemes ();
+        }
+
+        internal void detach_tab (EditWindow source, EditorTab tab) {
+            EditorTab held_tab = tab;
+            if (!source.release_tab (held_tab)) return;
+            var window = new EditWindow (this, settings, false);
+            window.adopt_tab (held_tab);
+            window.present ();
         }
 
         //  Action handlers
 
-        private void on_new_file ()       { edit_win?.add_tab (null); }
-        private void on_open ()           { edit_win?.open_file_dialog (); }
-        private void on_save ()           { edit_win?.save_current (); }
-        private void on_save_as ()        { edit_win?.save_current_as (); }
-        private void on_close_tab ()      { edit_win?.close_current_tab (); }
+        private void on_new_file ()       { active_edit_window ()?.add_tab (null); }
+        private void on_open ()           { active_edit_window ()?.open_file_dialog (); }
+        private void on_save ()           { active_edit_window ()?.save_current (); }
+        private void on_save_as ()        { active_edit_window ()?.save_current_as (); }
+        private void on_close_tab ()      { active_edit_window ()?.close_current_tab (); }
         private void on_quit ()           { quit (); }
-        private void on_undo ()           { edit_win?.get_current_tab ()?.undo (); }
-        private void on_redo ()           { edit_win?.get_current_tab ()?.redo (); }
-        private void on_find ()           { edit_win?.show_find (false); }
-        private void on_find_replace ()   { edit_win?.show_find (true); }
-        private void on_goto_line ()      { edit_win?.show_goto_line (); }
-        private void on_select_all ()     { edit_win?.get_current_tab ()?.select_all (); }
-        private void on_duplicate_line () { edit_win?.get_current_tab ()?.duplicate_line (); }
-        private void on_comment_toggle () { edit_win?.get_current_tab ()?.comment_toggle (); }
-        private void on_delete_line ()    { edit_win?.get_current_tab ()?.delete_line (); }
-        private void on_move_line_up ()   { edit_win?.get_current_tab ()?.move_line_up (); }
-        private void on_move_line_down () { edit_win?.get_current_tab ()?.move_line_down (); }
-        private void on_zoom_in ()        { edit_win?.zoom_change (1); }
-        private void on_zoom_out ()       { edit_win?.zoom_change (-1); }
-        private void on_zoom_reset ()     { edit_win?.zoom_reset (); }
-        private void on_toggle_sidebar () { edit_win?.toggle_sidebar (); }
-        private void on_toggle_minimap () { edit_win?.toggle_minimap (); }
-        private void on_toggle_md_preview () { edit_win?.toggle_md_preview (); }
-        private void on_fullscreen ()     { edit_win?.toggle_fullscreen (); }
-        private void on_revert ()         { edit_win?.revert_current (); }
+        private void on_undo ()           { active_edit_window ()?.get_current_tab ()?.undo (); }
+        private void on_redo ()           { active_edit_window ()?.get_current_tab ()?.redo (); }
+        private void on_find ()           { active_edit_window ()?.show_find (false); }
+        private void on_find_replace ()   { active_edit_window ()?.show_find (true); }
+        private void on_goto_line ()      { active_edit_window ()?.show_goto_line (); }
+        private void on_select_all ()     { active_edit_window ()?.get_current_tab ()?.select_all (); }
+        private void on_duplicate_line () { active_edit_window ()?.get_current_tab ()?.duplicate_line (); }
+        private void on_comment_toggle () { active_edit_window ()?.get_current_tab ()?.comment_toggle (); }
+        private void on_delete_line ()    { active_edit_window ()?.get_current_tab ()?.delete_line (); }
+        private void on_move_line_up ()   { active_edit_window ()?.get_current_tab ()?.move_line_up (); }
+        private void on_move_line_down () { active_edit_window ()?.get_current_tab ()?.move_line_down (); }
+        private void on_zoom_in ()        { active_edit_window ()?.zoom_change (1); }
+        private void on_zoom_out ()       { active_edit_window ()?.zoom_change (-1); }
+        private void on_zoom_reset ()     { active_edit_window ()?.zoom_reset (); }
+        private void on_toggle_sidebar () { active_edit_window ()?.toggle_sidebar (); }
+        private void on_toggle_minimap () { active_edit_window ()?.toggle_minimap (); }
+        private void on_toggle_md_preview () { active_edit_window ()?.toggle_md_preview (); }
+        private void on_fullscreen ()     { active_edit_window ()?.toggle_fullscreen (); }
+        private void on_revert ()         { active_edit_window ()?.revert_current (); }
 
         private void setup_styles () {
             var provider = new Gtk.CssProvider ();
