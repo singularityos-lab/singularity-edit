@@ -10,6 +10,7 @@ A text and code editor for the Singularity Desktop and GtkSourceView.
 - GTK4
 - libgee-0.8
 - GtkSourceView 5 (`gtksourceview-5`)
+- webkitgtk-6.0 ≥ 6.0
 - [libsingularity](https://github.com/singularityos-lab/libsingularity)
 
 ## Build & Install
