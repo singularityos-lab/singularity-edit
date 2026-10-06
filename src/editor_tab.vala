@@ -485,6 +485,8 @@ namespace Singularity.Apps {
                 modified = false;
                 refresh_title ();
                 add_to_recent ();
+                var window = get_root () as Singularity.Widgets.Window;
+                if (window != null) CloudActions.sync_back (window, file);
             } catch (Error e) {
                 warning ("write_to_disk: %s", e.message);
             }
@@ -734,6 +736,7 @@ namespace Singularity.Apps {
             if (result.length > 10)
                 result = result[0:10];
             settings.set_strv ("recent-files", result);
+            Gtk.RecentManager.get_default ().add_item (uri);
         }
 
         ~EditorTab () {

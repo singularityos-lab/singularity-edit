@@ -96,6 +96,7 @@ sources = files(
   'src/markdown.vala',
   'src/window.vala',
   'src/app.vala',
+  'src/cloud_actions.vala',
   'src/ts_lang_registry.vala',
   'src/ts_highlighter.vala',
   'src/ts_outline.vala',
@@ -121,7 +122,7 @@ install_data('data/dev.sinty.edit.gschema.xml',
   install_dir: get_option('datadir') / 'glib-2.0' / 'schemas'
 )
 install_data('data/dev.sinty.edit.json',
-  install_dir: get_option('datadir') / 'singularity' / 'apps'
+  install_dir: get_option('datadir') / 'singularity' / 'app-settings'
 )
 install_data('data/icons/dev.sinty.edit.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps'

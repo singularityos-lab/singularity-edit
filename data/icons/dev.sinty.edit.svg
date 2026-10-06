@@ -1,113 +1,30 @@
 <svg width="236" height="236" viewBox="0 0 236 236" fill="none" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="ce"><rect width="236" height="236" fill="white"/></clipPath>
-<mask id="pen_mask" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="20" y="4" width="196" height="228">
-  <!-- Pen shape: vertical fountain pen / stylus -->
-  <!-- Body (main rect, rounded top) -->
-  <rect x="94" y="24" width="48" height="160" rx="24" fill="white"/>
-  <!-- Grip section (slightly narrower) -->
-  <rect x="96" y="162" width="44" height="32" fill="white"/>
-  <!-- Nib section (tapers) -->
-  <polygon points="96,194 140,194 130,222 106,222" fill="white"/>
-  <!-- Tip (point) -->
-  <polygon points="106,222 130,222 118,234" fill="white"/>
-</mask>
-
-<linearGradient id="pen_front" x1="94" y1="4" x2="142" y2="236" gradientUnits="userSpaceOnUse">
-  <stop offset="0%"  stop-color="#fbbf24"/>
-  <stop offset="45%" stop-color="#f59e0b"/>
-  <stop offset="80%" stop-color="#d97706"/>
-  <stop offset="100%" stop-color="#92400e"/>
-</linearGradient>
-<linearGradient id="pen_mid" x1="94" y1="4" x2="142" y2="236" gradientUnits="userSpaceOnUse">
-  <stop offset="0%"  stop-color="#f59e0b"/>
-  <stop offset="100%" stop-color="#b45309"/>
-</linearGradient>
-<linearGradient id="pen_back" x1="94" y1="4" x2="142" y2="236" gradientUnits="userSpaceOnUse">
-  <stop offset="0%"  stop-color="#d97706"/>
-  <stop offset="100%" stop-color="#78350f"/>
-</linearGradient>
-<radialGradient id="pen_bloom" cx="104" cy="40" r="80" gradientUnits="userSpaceOnUse">
-  <stop offset="0%"  stop-color="white" stop-opacity="0.28"/>
-  <stop offset="100%" stop-color="white" stop-opacity="0"/>
-</radialGradient>
-<!-- Nib/tip gradient (darker metallic) -->
-<linearGradient id="nib_grad" x1="106" y1="194" x2="130" y2="234" gradientUnits="userSpaceOnUse">
-  <stop offset="0%"  stop-color="#d1d5db"/>
-  <stop offset="50%" stop-color="#9ca3af"/>
-  <stop offset="100%" stop-color="#4b5563"/>
-</linearGradient>
-<!-- Clip paths for each layer -->
-<clipPath id="pen_shape_clip">
-  <rect x="94" y="24" width="48" height="160" rx="24"/>
-</clipPath>
-<filter id="fshadow_pen" x="84" y="14" width="68" height="228" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-  <feFlood flood-opacity="0" result="BackgroundImageFix"/>
-  <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
-  <feOffset dy="3"/>
-  <feGaussianBlur stdDeviation="5"/>
-  <feComposite in2="hardAlpha" operator="out"/>
-  <feColorMatrix type="matrix" values="0 0 0 0 0.10 0 0 0 0 0.06 0 0 0 0 0.00 0 0 0 0.55 0"/>
-  <feBlend mode="normal" in2="BackgroundImageFix" result="e1"/>
-  <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
-  <feOffset dy="-2"/>
-  <feComposite in2="hardAlpha" operator="out"/>
-  <feColorMatrix type="matrix" values="0 0 0 0 0.08 0 0 0 0 0.05 0 0 0 0 0.00 0 0 0 0.35 0"/>
-  <feBlend mode="normal" in2="e1" result="e2"/>
-  <feBlend mode="normal" in="SourceGraphic" in2="e2"/>
-</filter>
+<linearGradient id="ed_wood" x1="0" y1="90" x2="0" y2="146" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fbe3bf"/><stop offset="1" stop-color="#e3b683"/></linearGradient>
+<linearGradient id="ed_lead" x1="0" y1="104" x2="0" y2="132" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5d6573"/><stop offset="1" stop-color="#2f3540"/></linearGradient>
+<linearGradient id="ed_band" x1="0" y1="88" x2="0" y2="148" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8e99a6"/><stop offset="0.3" stop-color="#f4f7fa"/><stop offset="0.62" stop-color="#c9d1db"/><stop offset="1" stop-color="#6b7482"/></linearGradient>
+<linearGradient id="ed_cap" x1="0" y1="90" x2="0" y2="146" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#feb8c1"/><stop offset="0.5" stop-color="#fb7185"/><stop offset="1" stop-color="#e8566e"/></linearGradient>
+<linearGradient id="ed_side" x1="0" y1="0" x2="0" y2="236" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#b8601a"/><stop offset="1" stop-color="#8a4414"/></linearGradient>
+<radialGradient id="ed_bloom" cx="70" cy="60" r="150" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="white" stop-opacity="0.3"/><stop offset="1" stop-color="white" stop-opacity="0"/></radialGradient>
+<clipPath id="ed_clip"><path transform="rotate(-45 118 118)" d="M62 90L16 111.5Q4 118 16 124.5L62 146ZM58 90H190V146H58ZM200 90H212Q232 90 232 110V126Q232 146 212 146H200ZM186 88H206V148H186Z"/></clipPath>
+<filter id="ed_shadow" x="-20" y="-20" width="276" height="276" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#4c2405" flood-opacity="0.42"/></filter>
 </defs>
-
-<g clip-path="url(#ce)">
-
-<!-- Eraser cap (top, pink/red) - depth layers -->
-<rect x="96"  y="28"  width="44" height="28" rx="22" fill="#f43f5e" opacity="0.6"/>
-<rect x="96"  y="27"  width="44" height="28" rx="22" fill="#fb7185"/>
-<rect x="96"  y="26"  width="44" height="28" rx="22" fill="url(#eraser_g)"/>
-
-<!-- Pen body - 3 depth layers (back → mid → front) -->
-<rect x="94"  y="52"  width="48" height="144" rx="0" fill="#b45309" opacity="0.55"/>
-<rect x="94"  y="51"  width="48" height="144" rx="0" fill="url(#pen_back)"/>
-<g filter="url(#fshadow_pen)">
-  <rect x="94"  y="50"  width="48" height="144" rx="0" fill="url(#pen_front)"/>
+<g filter="url(#ed_shadow)">
+<g transform="translate(0 9)"><path transform="rotate(-45 118 118)" d="M62 90L16 111.5Q4 118 16 124.5L62 146ZM58 90H190V146H58ZM200 90H212Q232 90 232 110V126Q232 146 212 146H200ZM186 88H206V148H186Z" fill="url(#ed_side)"/></g>
+<g transform="rotate(-45 118 118)">
+<path d="M62 90L16 111.5Q4 118 16 124.5L62 146Z" fill="url(#ed_wood)"/>
+<path d="M31 104.5L16 111.5Q4 118 16 124.5L31 131.5Z" fill="url(#ed_lead)"/>
+<path d="M58 90H190V109H58Z" fill="#fcc24a"/>
+<path d="M58 109H190V128H58Z" fill="#f8ab2c"/>
+<path d="M58 128H190V146H58Z" fill="#e58a1c"/>
+<path d="M200 90H212Q232 90 232 110V126Q232 146 212 146H200Z" fill="url(#ed_cap)"/>
+<rect x="186" y="88" width="20" height="60" rx="5" fill="url(#ed_band)"/>
+<rect x="192" y="88" width="3" height="60" fill="#6b7482" opacity="0.35"/>
 </g>
-
-<!-- Top cap (rounded) over body -->
-<rect x="94" y="50" width="48" height="24" rx="0" fill="url(#pen_front)" opacity="0.95"/>
-<!-- Rounded top of body (semicircle cap) -->
-<rect x="94" y="36" width="48" height="30" rx="24" fill="url(#pen_front)"/>
-
-<!-- Grip band (subtle darker band) -->
-<rect x="94" y="168" width="48" height="24" rx="0" fill="rgba(0,0,0,0.18)"/>
-<rect x="96" y="170" width="44" height="20" rx="2" fill="rgba(255,255,255,0.08)"/>
-
-<!-- Nib section (trapezoidal taper) -->
-<polygon points="94,192 142,192 134,218 102,218" fill="url(#pen_mid)"/>
-<polygon points="94,192 142,192 134,218 102,218" fill="rgba(0,0,0,0.12)"/>
-
-<!-- Metallic nib tip -->
-<polygon points="102,218 134,218 118,234" fill="url(#nib_grad)"/>
-<!-- Nib slit (center line) -->
-<line x1="118" y1="210" x2="118" y2="234" stroke="rgba(0,0,0,0.35)" stroke-width="1.5"/>
-
-<!-- Light bloom on pen body -->
-<mask id="pen_body_mask" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="94" y="36" width="48" height="158">
-  <rect x="94" y="36" width="48" height="158" fill="white"/>
-</mask>
-<g mask="url(#pen_body_mask)">
-  <circle cx="104" cy="60" r="50" fill="url(#pen_bloom)"/>
 </g>
-
-<!-- Side highlight line -->
-<line x1="105" y1="38" x2="105" y2="192" stroke="rgba(255,255,255,0.18)" stroke-width="2"/>
-
-<!-- Clip rect 50px wide band on right for dark side shadow -->
-
+<g clip-path="url(#ed_clip)"><rect width="236" height="236" fill="url(#ed_bloom)"/></g>
+<g transform="rotate(-45 118 118)">
+<rect x="66" y="95" width="116" height="6" rx="3" fill="white" opacity="0.45"/>
+<rect x="206" y="95" width="18" height="6" rx="3" fill="white" opacity="0.5"/>
 </g>
-<defs>
-<linearGradient id="eraser_g" x1="96" y1="26" x2="140" y2="54" gradientUnits="userSpaceOnUse">
-  <stop offset="0%"  stop-color="#fda4af"/>
-  <stop offset="100%" stop-color="#e11d48"/>
-</linearGradient>
-</defs>
 </svg>

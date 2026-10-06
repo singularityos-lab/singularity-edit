@@ -25,6 +25,12 @@ meson compile -C build
 meson install -C build
 ```
 
+## Third-party code
+
+- `vendor/tree-sitter`: the [tree-sitter](https://github.com/tree-sitter/tree-sitter) runtime, MIT License.
+- `vendor/tree-sitter-go`, `vendor/tree-sitter-python`, `vendor/tree-sitter-rust`, `vendor/tree-sitter-typescript`: the [tree-sitter grammars](https://github.com/tree-sitter) for those languages, MIT License.
+- `data/queries`: highlight queries from [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter), Apache License 2.0.
+
 ## License
 
 GPL-3.0-only - see [LICENSE](LICENSE).

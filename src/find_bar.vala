@@ -70,6 +70,7 @@ namespace Singularity.Apps {
             wrap_btn.active = true;
 
             var close_btn = new Button.from_icon_name ("window-close-symbolic");
+            close_btn.tooltip_text = _("Close");
             close_btn.add_css_class ("flat");
             close_btn.clicked.connect (() => close_requested ());
 

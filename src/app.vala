@@ -13,9 +13,29 @@ namespace Singularity.Apps {
         private GLib.Settings? settings;
         private GLib.Settings? desktop_settings;
 
+        private bool pending_new_file = false;
+
         public EditApp () {
             Object (application_id: "dev.sinty.edit",
                     flags: ApplicationFlags.HANDLES_OPEN);
+            add_main_option ("new-document", 0, OptionFlags.NONE, OptionArg.NONE,
+                             _("Open a new empty document"), null);
+        }
+
+        protected override int handle_local_options (VariantDict options) {
+            if (!options.contains ("new-document")) return -1;
+            try {
+                register (null);
+            } catch (Error e) {
+                return -1;
+            }
+            if (get_is_remote ()) {
+                activate ();
+                activate_action ("new-file", null);
+                return 0;
+            }
+            pending_new_file = true;
+            return -1;
         }
 
         protected override void startup () {
@@ -47,29 +67,82 @@ namespace Singularity.Apps {
         private GLib.Menu build_app_menu () {
             var menu = new GLib.Menu ();
 
-            var file_sec = new GLib.Menu ();
-            file_sec.append ("Save As…",  "app.save-as");
-            file_sec.append ("Revert",    "app.revert");
-            file_sec.append ("Settings",  "app.settings");
-            menu.append_section ("File", file_sec);
+            var file = new GLib.Menu ();
+            var f1 = new GLib.Menu ();
+            f1.append (_("New File"), "app.new-file");
+            f1.append (_("Open…"), "app.open");
+            f1.append (_("Open from Online Account…"), "app.open-online");
+            file.append_section (null, f1);
+            var f2 = new GLib.Menu ();
+            f2.append (_("Save"), "app.save");
+            f2.append (_("Save As…"), "app.save-as");
+            f2.append (_("Save to Online Account…"), "app.save-online");
+            f2.append (_("Share…"), "app.share");
+            f2.append (_("Revert"), "app.revert");
+            file.append_section (null, f2);
+            var f3 = new GLib.Menu ();
+            f3.append (_("Close Tab"), "app.close-tab");
+            f3.append (_("Close Other Tabs"), "app.close-other-tabs");
+            f3.append (_("Close All Tabs"), "app.close-all-tabs");
+            file.append_section (null, f3);
+            var f4 = new GLib.Menu ();
+            f4.append (_("Close Window"), "win.close");
+            f4.append (_("Quit"), "app.quit");
+            file.append_section (null, f4);
+            menu.append_submenu (_("File"), file);
 
-            var edit_sec = new GLib.Menu ();
-            edit_sec.append ("Undo",        "app.undo");
-            edit_sec.append ("Redo",        "app.redo");
-            edit_sec.append ("Select All",  "app.select-all");
-            menu.append_section ("Edit", edit_sec);
+            var edit = new GLib.Menu ();
+            var e1 = new GLib.Menu ();
+            e1.append (_("Undo"), "app.undo");
+            e1.append (_("Redo"), "app.redo");
+            edit.append_section (null, e1);
+            var e2 = new GLib.Menu ();
+            e2.append (_("Cut"), "app.cut");
+            e2.append (_("Copy"), "app.copy");
+            e2.append (_("Paste"), "app.paste");
+            e2.append (_("Select All"), "app.select-all");
+            edit.append_section (null, e2);
+            var e3 = new GLib.Menu ();
+            e3.append (_("Find"), "app.find");
+            e3.append (_("Find and Replace"), "app.find-replace");
+            e3.append (_("Go to Line…"), "app.goto-line");
+            edit.append_section (null, e3);
+            var e4 = new GLib.Menu ();
+            e4.append (_("Duplicate Line"), "app.duplicate-line");
+            e4.append (_("Delete Line"), "app.delete-line");
+            e4.append (_("Move Line Up"), "app.move-line-up");
+            e4.append (_("Move Line Down"), "app.move-line-down");
+            e4.append (_("Toggle Comment"), "app.comment-toggle");
+            edit.append_section (null, e4);
+            var e5 = new GLib.Menu ();
+            e5.append (_("Settings"), "app.settings");
+            edit.append_section (null, e5);
+            menu.append_submenu (_("Edit"), edit);
 
-            var view_sec = new GLib.Menu ();
-            view_sec.append ("Toggle Sidebar (F9)",    "app.toggle-sidebar");
-            view_sec.append ("Toggle Minimap (Alt+M)", "app.toggle-minimap");
-            view_sec.append ("Fullscreen (F11)",       "app.fullscreen");
-            view_sec.append ("Zoom In",                "app.zoom-in");
-            view_sec.append ("Zoom Out",               "app.zoom-out");
-            view_sec.append ("Reset Zoom",             "app.zoom-reset");
-            menu.append_section ("View", view_sec);
+            var view = new GLib.Menu ();
+            var v1 = new GLib.Menu ();
+            v1.append (_("Command Palette"), "app.command-palette");
+            view.append_section (null, v1);
+            var v2 = new GLib.Menu ();
+            v2.append (_("Sidebar"), "app.toggle-sidebar");
+            v2.append (_("Outline"), "app.toggle-outline");
+            v2.append (_("Minimap"), "app.toggle-minimap");
+            v2.append (_("Markdown Preview"), "app.toggle-md-preview");
+            view.append_section (null, v2);
+            var v3 = new GLib.Menu ();
+            v3.append (_("Zoom In"), "app.zoom-in");
+            v3.append (_("Zoom Out"), "app.zoom-out");
+            v3.append (_("Reset Zoom"), "app.zoom-reset");
+            view.append_section (null, v3);
+            var v4 = new GLib.Menu ();
+            v4.append (_("Fullscreen"), "app.fullscreen");
+            view.append_section (null, v4);
+            menu.append_submenu (_("View"), view);
 
-            var prefs_sec = new GLib.Menu ();
-            menu.append_section ("", prefs_sec);
+            var go = new GLib.Menu ();
+            go.append (_("Next Tab"), "app.next-tab");
+            go.append (_("Previous Tab"), "app.previous-tab");
+            menu.append_submenu (_("Go"), go);
 
             return menu;
         }
@@ -101,6 +174,9 @@ namespace Singularity.Apps {
             add_act ("open",           on_open);
             add_act ("save",           on_save);
             add_act ("save-as",        on_save_as);
+            add_act ("open-online",    on_open_online);
+            add_act ("save-online",    on_save_online);
+            add_act ("share",          on_share);
             add_act ("close-tab",      on_close_tab);
             add_act ("quit",           on_quit);
             add_act ("undo",           on_undo);
@@ -117,11 +193,21 @@ namespace Singularity.Apps {
             add_act ("zoom-in",        on_zoom_in);
             add_act ("zoom-out",       on_zoom_out);
             add_act ("zoom-reset",     on_zoom_reset);
-            add_act ("toggle-sidebar", on_toggle_sidebar);
-            add_act ("toggle-minimap", on_toggle_minimap);
-            add_act ("toggle-md-preview", on_toggle_md_preview);
-            add_act ("fullscreen",     on_fullscreen);
+            add_toggle ("toggle-sidebar", on_toggle_sidebar);
+            add_toggle ("toggle-minimap", on_toggle_minimap);
+            add_toggle ("toggle-md-preview", on_toggle_md_preview);
+            add_toggle ("toggle-outline", on_toggle_outline);
+            add_toggle ("fullscreen",     on_fullscreen);
             add_act ("revert",         on_revert);
+            add_act ("cut",            on_cut);
+            add_act ("copy",           on_copy);
+            add_act ("paste",          on_paste);
+            add_act ("close-other-tabs", on_close_other_tabs);
+            add_act ("close-all-tabs", on_close_all_tabs);
+            add_act ("next-tab",       on_next_tab);
+            add_act ("previous-tab",   on_previous_tab);
+            add_act ("command-palette", on_command_palette);
+            notify["active-window"].connect (() => sync_document_actions ());
 
             var act_settings = new SimpleAction ("settings", null);
             act_settings.activate.connect (() => active_edit_window ()?.show_preferences ());
@@ -134,6 +220,69 @@ namespace Singularity.Apps {
             var act = new SimpleAction (name, null);
             act.activate.connect ((_) => handler ());
             add_action (act);
+        }
+
+        private void add_toggle (string name, ActionHandler handler) {
+            var act = new SimpleAction.stateful (name, null, new Variant.boolean (false));
+            act.activate.connect ((_) => {
+                handler ();
+                sync_document_actions ();
+            });
+            add_action (act);
+        }
+
+        private GtkSource.Buffer? tracked_buffer = null;
+        private ulong[] tracked_handlers = {};
+
+        private void set_act (string name, bool enabled) {
+            var act = lookup_action (name) as SimpleAction;
+            if (act != null) act.set_enabled (enabled);
+        }
+
+        private void set_toggle (string name, bool enabled, bool active) {
+            var act = lookup_action (name) as SimpleAction;
+            if (act == null) return;
+            act.set_enabled (enabled);
+            act.set_state (new Variant.boolean (active));
+        }
+
+        internal void sync_document_actions () {
+            var window = active_edit_window ();
+            if (window != null && window.tab_container == null) window = null;
+            var tab = window?.get_current_tab ();
+            var buffer = tab?.buffer;
+            if (buffer != tracked_buffer) {
+                if (tracked_buffer != null)
+                    foreach (var h in tracked_handlers) tracked_buffer.disconnect (h);
+                tracked_handlers = {};
+                tracked_buffer = buffer;
+                if (buffer != null) {
+                    tracked_handlers += buffer.notify["can-undo"].connect (() => sync_document_actions ());
+                    tracked_handlers += buffer.notify["can-redo"].connect (() => sync_document_actions ());
+                    tracked_handlers += buffer.notify["has-selection"].connect (() => sync_document_actions ());
+                }
+            }
+            bool doc = tab != null;
+            int pages = window != null ? (int) window.tab_container.get_n_pages () : 0;
+            foreach (string name in new string[] { "save", "save-as", "save-online", "close-tab", "paste", "select-all",
+                                                   "find", "find-replace", "goto-line", "duplicate-line",
+                                                   "delete-line", "move-line-up", "move-line-down",
+                                                   "comment-toggle", "close-all-tabs" })
+                set_act (name, doc);
+            set_act ("revert", doc && tab.file != null);
+            set_act ("share", doc && tab.file != null && tab.file.query_exists (null));
+            set_act ("undo", buffer != null && buffer.can_undo);
+            set_act ("redo", buffer != null && buffer.can_redo);
+            set_act ("cut", buffer != null && buffer.has_selection);
+            set_act ("copy", buffer != null && buffer.has_selection);
+            set_act ("close-other-tabs", pages > 1);
+            set_act ("next-tab", pages > 1);
+            set_act ("previous-tab", pages > 1);
+            set_toggle ("toggle-sidebar", window != null, window != null && window.sidebar_shown);
+            set_toggle ("toggle-minimap", doc, window != null && window.minimap_shown);
+            set_toggle ("toggle-outline", doc && tab.has_outline (), window != null && window.outline_shown);
+            set_toggle ("toggle-md-preview", doc && tab.is_markdown, doc && tab.showing_md_preview ());
+            set_toggle ("fullscreen", window != null, window != null && window.fullscreened);
         }
 
         private void setup_accels () {
@@ -161,6 +310,11 @@ namespace Singularity.Apps {
             set_accels_for_action ("app.toggle-minimap", {"<Alt>m"});
             set_accels_for_action ("app.toggle-md-preview", {"<Ctrl><Shift>m"});
             set_accels_for_action ("app.fullscreen",     {"F11"});
+            set_accels_for_action ("app.settings",       {"<Ctrl>comma"});
+            set_accels_for_action ("app.command-palette", {"<Ctrl>p"});
+            set_accels_for_action ("app.next-tab",       {"<Ctrl>Page_Down"});
+            set_accels_for_action ("app.previous-tab",   {"<Ctrl>Page_Up"});
+            set_accels_for_action ("win.close",          {"<Ctrl><Shift>w"});
         }
 
         //  Lifecycle
@@ -173,6 +327,10 @@ namespace Singularity.Apps {
             var window = new EditWindow (this, settings);
             edit_win = window;
             window.present ();
+            if (pending_new_file) {
+                pending_new_file = false;
+                window.add_tab (null);
+            }
         }
 
         public override void open (GLib.File[] files, string hint) {
@@ -212,6 +370,16 @@ namespace Singularity.Apps {
         private void on_open ()           { active_edit_window ()?.open_file_dialog (); }
         private void on_save ()           { active_edit_window ()?.save_current (); }
         private void on_save_as ()        { active_edit_window ()?.save_current_as (); }
+        private void on_save_online ()    { CloudActions.save_tab (active_edit_window ()); }
+        private void on_share () {
+            var w = active_edit_window ();
+            var f = w?.get_current_tab ()?.file;
+            if (w != null && f != null) Singularity.Share.files (w, { f });
+        }
+        private void on_open_online () {
+            var w = active_edit_window ();
+            if (w != null) CloudActions.open.begin (w, (f) => w.open_file (f));
+        }
         private void on_close_tab ()      { active_edit_window ()?.close_current_tab (); }
         private void on_quit ()           { quit (); }
         private void on_undo ()           { active_edit_window ()?.get_current_tab ()?.undo (); }
@@ -233,6 +401,15 @@ namespace Singularity.Apps {
         private void on_toggle_md_preview () { active_edit_window ()?.toggle_md_preview (); }
         private void on_fullscreen ()     { active_edit_window ()?.toggle_fullscreen (); }
         private void on_revert ()         { active_edit_window ()?.revert_current (); }
+        private void on_toggle_outline () { active_edit_window ()?.toggle_outline_panel (); }
+        private void on_cut ()            { active_edit_window ()?.clipboard_action (0); }
+        private void on_copy ()           { active_edit_window ()?.clipboard_action (1); }
+        private void on_paste ()          { active_edit_window ()?.clipboard_action (2); }
+        private void on_close_other_tabs () { active_edit_window ()?.close_other_tabs (); }
+        private void on_close_all_tabs () { active_edit_window ()?.close_all_tabs (); }
+        private void on_next_tab ()       { active_edit_window ()?.cycle_tab (1); }
+        private void on_previous_tab ()   { active_edit_window ()?.cycle_tab (-1); }
+        private void on_command_palette () { active_edit_window ()?.open_command_palette (); }
 
         private void setup_styles () {
             var provider = new Gtk.CssProvider ();

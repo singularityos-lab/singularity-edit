@@ -36,6 +36,7 @@ namespace Singularity.Apps {
         private bool _session_owner = true;
 
         private void sync_md_btn_visibility () {
+            _app.sync_document_actions ();
             if (_md_btn == null) return;
             var tab = get_current_tab ();
             _md_btn.visible = (tab != null && tab.is_markdown);
@@ -48,6 +49,10 @@ namespace Singularity.Apps {
             _session_owner = restore_session;
             if (!restore_session) _sidebar_visible = false;
             _build_ui ();
+            var close_act = new SimpleAction ("close", null);
+            close_act.activate.connect (() => close ());
+            add_action (close_act);
+            notify["fullscreened"].connect (() => _app.sync_document_actions ());
             close_request.connect(_on_close_request);
             if (restore_session) _restore_session ();
         }
@@ -65,13 +70,13 @@ namespace Singularity.Apps {
             wp.title    = _("Edit");
             wp.subtitle = _("Open a file to get started");
             wp.add_action (
-                "document-new-symbolic",
+                "text-x-generic",
                 "New File",
                 "Create a blank document.",
                 () => add_tab (null)
             );
             wp.add_action (
-                "document-open-symbolic",
+                "folder-open",
                 "Open File",
                 "Choose a file from disk to edit.",
                 () => open_file_dialog ()
@@ -157,6 +162,9 @@ namespace Singularity.Apps {
             var save_btn = add_bubble_icon ("document-save-symbolic", "Save (Ctrl+S)",  () => {});
             save_btn.action_name = "app.save";
 
+            var share_btn = add_bubble_icon ("singularity-share-symbolic", _("Share"), () => {});
+            share_btn.action_name = "app.share";
+
             _md_btn = add_bubble_icon ("view-dual-symbolic", "Markdown Preview", () => {});
             _md_btn.action_name = "app.toggle-md-preview";
             _md_btn.visible = false;
@@ -165,14 +173,6 @@ namespace Singularity.Apps {
             tab_container.notebook.switch_page.connect ((page, _idx) => {
                 GLib.Idle.add (() => { sync_md_btn_visibility (); return GLib.Source.REMOVE; });
             });
-
-            if (!Singularity.Runtime.is_shell_running ()) {
-                var menu_btn = new MenuButton ();
-                menu_btn.icon_name  = "open-menu-symbolic";
-                menu_btn.add_css_class ("flat");
-                menu_btn.menu_model = _build_app_menu ();
-                add_bubble_widget (menu_btn);
-            }
 
             // Tabs are rendered as a ChipBar pinned at the bottom of the
             // editor box. The notebook's own tab strip stays hidden; the
@@ -220,34 +220,6 @@ namespace Singularity.Apps {
                 _suppress_chip_sync = false;
             });
             _editor_box.append (_tab_chips);
-        }
-
-        private GLib.Menu _build_app_menu () {
-            var menu = new GLib.Menu ();
-
-            var file_sec = new GLib.Menu ();
-            file_sec.append ("Save As…",  "app.save-as");
-            file_sec.append ("Revert",    "app.revert");
-            file_sec.append ("Settings",  "app.settings");
-            menu.append_section ("File", file_sec);
-
-            var edit_sec = new GLib.Menu ();
-            edit_sec.append ("Undo",       "app.undo");
-            edit_sec.append ("Redo",       "app.redo");
-            edit_sec.append ("Select All", "app.select-all");
-            menu.append_section ("Edit", edit_sec);
-
-            var view_sec = new GLib.Menu ();
-            view_sec.append ("Toggle Sidebar (F9)",    "app.toggle-sidebar");
-            view_sec.append ("Toggle Minimap (Alt+M)", "app.toggle-minimap");
-            view_sec.append ("Markdown Preview (Ctrl+Shift+M)", "app.toggle-md-preview");
-            view_sec.append ("Fullscreen (F11)",       "app.fullscreen");
-            view_sec.append ("Zoom In",                "app.zoom-in");
-            view_sec.append ("Zoom Out",               "app.zoom-out");
-            view_sec.append ("Reset Zoom",             "app.zoom-reset");
-            menu.append_section ("View", view_sec);
-
-            return menu;
         }
 
         //  Tab management
@@ -321,6 +293,29 @@ namespace Singularity.Apps {
 
         public EditorTab? get_current_tab () {
             return tab_container.get_current_page () as EditorTab;
+        }
+
+        public bool sidebar_shown { get { return _sidebar_visible; } }
+        public bool minimap_shown { get { return _minimap_visible; } }
+        public bool outline_shown { get { return _outline_revealer != null && _outline_revealer.reveal_child; } }
+
+        public void open_command_palette () { _open_palette (); }
+
+        public void cycle_tab (int delta) {
+            int n = tab_container.notebook.get_n_pages ();
+            if (n < 2) return;
+            int cur = tab_container.notebook.get_current_page ();
+            tab_container.notebook.set_current_page (((cur + delta) % n + n) % n);
+        }
+
+        public void clipboard_action (int kind) {
+            var tab = get_current_tab ();
+            if (tab == null) return;
+            var clipboard = tab.view.get_clipboard ();
+            if (kind == 0) tab.buffer.cut_clipboard (clipboard, tab.view.editable);
+            else if (kind == 1) tab.buffer.copy_clipboard (clipboard);
+            else tab.buffer.paste_clipboard (clipboard, null, tab.view.editable);
+            tab.view.grab_focus ();
         }
 
         public void save_current ()    { get_current_tab ()?.save (); }
@@ -613,6 +608,7 @@ namespace Singularity.Apps {
             }
             if (tab_container.get_current_page () == tab)
                 _update_title ();
+            _app.sync_document_actions ();
         }
 
         private void _on_tab_cursor_changed (EditorTab tab) {
@@ -630,6 +626,7 @@ namespace Singularity.Apps {
                 _chip_to_tab.insert (id, tab);
                 _tab_chips.add_chip (id, tab.title);
             }
+            GLib.Idle.add (() => { _app.sync_document_actions (); return GLib.Source.REMOVE; });
         }
 
         private void _on_page_removed (Widget page, uint _n) {
@@ -643,10 +640,12 @@ namespace Singularity.Apps {
                 }
             }
             _update_title ();
+            GLib.Idle.add (() => { _app.sync_document_actions (); return GLib.Source.REMOVE; });
         }
 
         private void _on_page_switched (Widget? page, uint _n) {
             _update_title ();
+            GLib.Idle.add (() => { _app.sync_document_actions (); return GLib.Source.REMOVE; });
             var tab = page as EditorTab;
             _statusbar.update_for_tab (tab);
             if (tab != null && tab.file != null)
@@ -690,6 +689,7 @@ namespace Singularity.Apps {
             if (tab != _outline_observed_tab) return;
             var entries = tab.get_outline_entries ();
             _statusbar.set_outline_available (tab.has_outline ());
+            _app.sync_document_actions ();
             _outline_panel.set_entries (entries);
             _outline_panel.set_title_suffix (
                 tab.file != null ? tab.file.get_basename () : null);
@@ -701,6 +701,7 @@ namespace Singularity.Apps {
 
         private void _set_outline_revealed (bool revealed) {
             _outline_revealer.reveal_child = revealed;
+            _app.sync_document_actions ();
             if (_statusbar.outline_btn.active != revealed)
                 _statusbar.outline_btn.active = revealed;
         }
