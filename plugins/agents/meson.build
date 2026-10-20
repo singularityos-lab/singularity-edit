@@ -1,6 +1,6 @@
 edit_agents_plugin = shared_module('edit-agents',
-  files('agents_plugin.vala', 'acp_client.vala', 'agent_catalog.vala', 'agent_session.vala', 'autopilot.vala', 'agent_panel.vala', 'mcp_server.vala'),
-  dependencies: [edit_lib_dep, gee_dep, json_dep, dependency('libpeas-2'), dependency('libsoup-3.0'), meson.get_compiler('vala').find_library('posix')],
+  files('agents_plugin.vala', 'acp_client.vala', 'agent_catalog.vala', 'agent_keys.vala', 'agent_session.vala', 'autopilot.vala', 'agent_panel.vala', 'mcp_server.vala'),
+  dependencies: [edit_lib_dep, gee_dep, json_dep, dependency('libpeas-2'), dependency('libsoup-3.0'), dependency('libsecret-1'), meson.get_compiler('vala').find_library('posix')],
   install: true,
   install_dir: edit_plugin_dir / 'agents',
 )

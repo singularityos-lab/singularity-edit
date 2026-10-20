@@ -321,6 +321,15 @@ namespace EditAgents {
                 if (a.featured || a.distribution.has_member ("local")) box.append (btn);
                 else others.append (btn);
             }
+            if (agent != null) {
+                var keys = new Button.with_label (_("Sign In and API Key for %s").printf (agent.name));
+                keys.add_css_class ("flat");
+                keys.clicked.connect (() => {
+                    pop.popdown ();
+                    add_sign_in (session != null ? session.auth_methods : null, Singularity.Edit.Dsh.for_path (project_root ()) != null);
+                });
+                box.append (keys);
+            }
             if (others.get_first_child () != null) {
                 var more = new Expander (_("More agents from the ACP registry"));
                 var sw = new ScrolledWindow ();
@@ -385,8 +394,12 @@ namespace EditAgents {
             run_prompt (text);
         }
 
-        private async void start_session (string first_prompt) {
+        private string? retry_prompt;
+
+        private async void start_session (string first_prompt, string? auth_method = null) {
+            retry_prompt = first_prompt;
             session = new AgentSession (agent, workspace, project_root (), mode);
+            session.auth_method = auth_method;
             if (mcp != null) session.mcp = mcp.descriptor ();
             connect_session (session);
             sync_status ();
@@ -435,6 +448,7 @@ namespace EditAgents {
             s.ended.connect ((reason) => {
                 if (s != session) return;
                 add_note (reason);
+                if (s.needs_auth) add_sign_in (s.auth_methods, s.runs_in_dsh);
                 remove_flag ();
                 flag = null;
                 sync_review ();
@@ -591,6 +605,144 @@ namespace EditAgents {
             conv.append (card);
             scroll_down ();
             follow_call (req.call);
+        }
+
+        private void retry (string? auth_method = null) {
+            if (agent == null) return;
+            start_session.begin (retry_prompt ?? "", auth_method);
+        }
+
+        private void open_terminal_login (string[] argv, bool in_dsh) {
+            var info = new DesktopAppInfo ("dev.sinty.leafs.desktop");
+            if (info == null) {
+                workspace.notify_user (_("Install Leafs to sign in from a terminal"));
+                return;
+            }
+            string[] cmd = argv;
+            var dsh = in_dsh ? Singularity.Edit.Dsh.for_path (project_root ()) : null;
+            if (dsh != null) cmd = dsh.wrap (argv, project_root ());
+            string[] full = { info.get_executable (), "--working-directory=" + Environment.get_home_dir (), "-e" };
+            foreach (var a in cmd) full += a;
+            try {
+                new SubprocessLauncher (SubprocessFlags.NONE).spawnv (full);
+            } catch (Error e) {
+                workspace.notify_user (e.message);
+            }
+        }
+
+        private static string[]? terminal_auth (Json.Object method) {
+            if (!method.has_member ("_meta") || method.get_member ("_meta").get_node_type () != Json.NodeType.OBJECT) return null;
+            var meta = method.get_object_member ("_meta");
+            if (!meta.has_member ("terminal-auth") || meta.get_member ("terminal-auth").get_node_type () != Json.NodeType.OBJECT) return null;
+            var t = meta.get_object_member ("terminal-auth");
+            if (!t.has_member ("command")) return null;
+            string[] argv = { t.get_string_member ("command") };
+            if (t.has_member ("args")) {
+                var a = t.get_array_member ("args");
+                for (uint i = 0; i < a.get_length (); i++) argv += a.get_string_element (i);
+            }
+            return argv;
+        }
+
+        private void add_sign_in (Json.Array? methods, bool in_dsh) {
+            last_role = null;
+            var chosen = agent;
+            var card = new Box (Orientation.VERTICAL, 8);
+            card.add_css_class ("edit-agent-card");
+            card.add_css_class ("permission");
+            var title = new Label (null);
+            title.xalign = 0;
+            title.wrap = true;
+            title.set_markup (_("<b>Sign in to %s</b>").printf (Markup.escape_text (chosen.name)));
+            card.append (title);
+            var info = new Label (in_dsh
+                ? _("It runs in the developer shell, so it uses the account you signed in to there. Sign in, or give it an API key that Edit keeps in your keyring.")
+                : _("Sign in with your account, or give it an API key that Edit keeps in your keyring."));
+            info.xalign = 0;
+            info.wrap = true;
+            info.add_css_class ("caption");
+            card.append (info);
+            if (methods != null) {
+                for (uint i = 0; i < methods.get_length (); i++) {
+                    var m = methods.get_object_element (i);
+                    if (!m.has_member ("id")) continue;
+                    string id = m.get_string_member ("id");
+                    string name = m.has_member ("name") ? m.get_string_member ("name") : id;
+                    var b = new Button.with_label (name);
+                    b.add_css_class ("pill");
+                    b.halign = Align.START;
+                    if (m.has_member ("description") && m.get_member ("description").get_node_type () == Json.NodeType.VALUE)
+                        b.tooltip_text = m.get_string_member ("description");
+                    var argv = terminal_auth (m);
+                    b.clicked.connect (() => {
+                        if (argv != null) {
+                            open_terminal_login (argv, in_dsh);
+                            add_note (_("Finish signing in in the terminal, then choose Try Again"));
+                        } else {
+                            retry (id);
+                        }
+                    });
+                    card.append (b);
+                }
+            }
+            var key_title = new Label (_("API key"));
+            key_title.xalign = 0;
+            key_title.add_css_class ("heading");
+            card.append (key_title);
+            var variable = new Entry ();
+            variable.placeholder_text = _("Variable name, for example ANTHROPIC_API_KEY");
+            variable.text = AgentKeys.default_variable (chosen);
+            card.append (variable);
+            var value = new PasswordEntry ();
+            value.show_peek_icon = true;
+            value.placeholder_text = _("Paste the key or token");
+            card.append (value);
+            var row = new Box (Orientation.HORIZONTAL, 6);
+            var save = new Button.with_label (_("Save and Try Again"));
+            save.add_css_class ("pill");
+            save.add_css_class ("suggested-action");
+            save.clicked.connect (() => {
+                string v = variable.text.strip ();
+                if (!AgentKeys.valid_variable (v) || value.text == "") {
+                    add_note (_("Enter a variable name made of letters, digits and underscores, and the key"));
+                    return;
+                }
+                AgentKeys.store.begin (chosen, v, value.text, (o, r) => {
+                    try {
+                        AgentKeys.store.end (r);
+                        value.text = "";
+                        add_note (_("The key is saved in your keyring"));
+                        retry ();
+                    } catch (Error e) {
+                        add_note (_("Cannot save the key: %s").printf (e.message));
+                    }
+                });
+            });
+            row.append (save);
+            var again = new Button.with_label (_("Try Again"));
+            again.add_css_class ("pill");
+            again.clicked.connect (() => retry ());
+            row.append (again);
+            card.append (row);
+            var forget = new Button.with_label (_("Forget Saved Key"));
+            forget.add_css_class ("flat");
+            forget.halign = Align.START;
+            forget.visible = false;
+            AgentKeys.lookup.begin (chosen.id, (o, r) => forget.visible = AgentKeys.lookup.end (r) != null);
+            forget.clicked.connect (() => {
+                AgentKeys.forget.begin (chosen.id, (o, r) => {
+                    try {
+                        AgentKeys.forget.end (r);
+                        forget.visible = false;
+                        add_note (_("The saved key was removed"));
+                    } catch (Error e) {
+                        add_note (e.message);
+                    }
+                });
+            });
+            card.append (forget);
+            conv.append (card);
+            scroll_down ();
         }
 
         private void follow_call (ToolCall call) {

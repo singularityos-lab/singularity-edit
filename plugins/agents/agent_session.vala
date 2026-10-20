@@ -139,6 +139,10 @@ namespace EditAgents {
         private Cancellable cancel = new Cancellable ();
 
         public Json.Object? mcp { get; set; }
+        public Json.Array? auth_methods { get; private set; }
+        public bool needs_auth { get; private set; }
+        public string? auth_method { get; set; }
+        public bool runs_in_dsh { get { return dsh != null; } }
 
         public AgentSession (AgentEntry agent, Workspace ws, string root, Mode mode) {
             this.agent = agent;
@@ -156,15 +160,18 @@ namespace EditAgents {
             status = _("Starting %s").printf (agent.name);
             try {
                 var launch = yield AgentCatalog.get_default ().launch_for (agent, cancel);
+                string[] launch_env = launch.env;
+                string? key = yield AgentKeys.lookup (agent.id);
+                if (key != null && "=" in key) launch_env += key;
                 string[] env = Environ.get ();
-                foreach (var e in launch.env) env += e;
+                foreach (var e in launch_env) env += e;
                 string[] argv = launch.argv;
                 var shell = Singularity.Edit.Dsh.for_path (root);
                 if (mode != Mode.AUTOPILOT && shell != null && argv.length > 0
                     && (!Path.is_absolute (argv[0]) || shell.owns (argv[0])) && shell.has_program (shell.to_guest (argv[0]))) {
                     dsh = shell;
                     client.dsh = shell;
-                    argv = shell.wrap (argv, root, launch.env);
+                    argv = shell.wrap (argv, root, launch_env);
                     env = Environ.get ();
                 }
                 if (dsh == null && argv.length > 0 && !Path.is_absolute (argv[0])
@@ -196,7 +203,15 @@ namespace EditAgents {
                 init.set_object_member ("clientCapabilities", caps);
                 init.set_object_member ("clientInfo", info);
                 status = _("Connecting to %s").printf (agent.name);
-                yield client.call ("initialize", init);
+                var ready = yield client.call ("initialize", init);
+                if (ready != null && ready.get_node_type () == Json.NodeType.OBJECT && ready.get_object ().has_member ("authMethods"))
+                    auth_methods = ready.get_object ().get_array_member ("authMethods");
+                if (auth_method != null) {
+                    var auth = new Json.Object ();
+                    auth.set_string_member ("methodId", auth_method);
+                    status = _("Signing in to %s").printf (agent.name);
+                    yield client.call ("authenticate", auth);
+                }
                 var neu = new Json.Object ();
                 neu.set_string_member ("cwd", root);
                 var servers = new Json.Array ();
@@ -206,7 +221,11 @@ namespace EditAgents {
                 try {
                     created = yield client.call ("session/new", neu);
                 } catch (Error e) {
-                    if ("auth" in e.message.down ()) throw new IOError.PERMISSION_DENIED (_("Sign in to %s first: run it once in a terminal").printf (agent.name));
+                    if ("auth" in e.message.down () || "login" in e.message.down () || "api key" in e.message.down ()) {
+                        needs_auth = true;
+                        end (_("Sign in to %s to continue").printf (agent.name));
+                        return false;
+                    }
                     throw e;
                 }
                 var obj = created.get_object ();
@@ -300,8 +319,11 @@ namespace EditAgents {
             client.notify ("session/cancel", prm);
         }
 
+        private bool finished;
+
         public void end (string reason) {
-            if (!running && session_id == null && status == reason) return;
+            if (finished || (!running && session_id == null && status == reason)) return;
+            finished = true;
             if (deadline != 0) {
                 Source.remove (deadline);
                 deadline = 0;

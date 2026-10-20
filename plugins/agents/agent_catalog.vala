@@ -8,6 +8,7 @@ namespace EditAgents {
         public string description = "";
         public Json.Object distribution;
         public string[] hosts = {};
+        public string key_variable = "";
 
         public bool featured {
             get { return id in AgentCatalog.FEATURED; }
@@ -141,6 +142,7 @@ namespace EditAgents {
                     if (o.has_member ("args")) cmd.set_array_member ("args", o.get_array_member ("args"));
                     a.distribution = new Json.Object ();
                     a.distribution.set_object_member ("local", cmd);
+                    if (o.has_member ("keyVariable")) a.key_variable = o.get_string_member ("keyVariable");
                     if (o.has_member ("hosts")) {
                         string[] h = {};
                         var ha = o.get_array_member ("hosts");
