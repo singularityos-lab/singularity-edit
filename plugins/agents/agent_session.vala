@@ -167,6 +167,12 @@ namespace EditAgents {
                     argv = shell.wrap (argv, root, launch.env);
                     env = Environ.get ();
                 }
+                if (dsh == null && argv.length > 0 && !Path.is_absolute (argv[0])
+                    && Environment.find_program_in_path (argv[0]) == null) {
+                    var any = Singularity.Edit.Dsh.get_default ();
+                    if (any != null && any.has_program (argv[0]))
+                        throw new IOError.NOT_FOUND (_("%s runs from the developer shell: open your project from Developer Files to use it").printf (agent.name));
+                }
                 if (mode == Mode.AUTOPILOT) {
                     restore = yield RestorePoint.create (root);
                     proxy = new HostProxy (agent.hosts);

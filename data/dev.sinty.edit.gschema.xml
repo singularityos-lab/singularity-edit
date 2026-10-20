@@ -91,6 +91,16 @@
       <summary>Session Active Tab</summary>
       <description>Index of the active tab to restore on startup.</description>
     </key>
+    <key name="project-folder" type="s">
+      <default>''</default>
+      <summary>Project Folder</summary>
+      <description>Folder opened as the project shown in the sidebar, restored on startup.</description>
+    </key>
+    <key name="recent-folders" type="as">
+      <default>[]</default>
+      <summary>Recent Folders</summary>
+      <description>Recently opened project folders (URIs).</description>
+    </key>
     <key name="sidebar-path" type="s">
       <default>''</default>
       <summary>Sidebar Path</summary>

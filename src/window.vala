@@ -97,13 +97,19 @@ namespace Singularity.Apps {
                 "Choose a file from disk to edit.",
                 () => open_file_dialog ()
             );
+            wp.add_action (
+                "folder",
+                _("Open Folder"),
+                _("Work on a project with its files in the sidebar."),
+                () => open_folder_dialog ()
+            );
             var dsh = Singularity.Edit.Dsh.get_default ();
             if (dsh != null) {
                 wp.add_action (
                     "applications-engineering",
                     _("Developer Files"),
                     _("Edit a project from the developer shell with its own tools."),
-                    () => open_file_dialog (File.new_for_path (dsh.host_root))
+                    () => open_folder_dialog (File.new_for_path (dsh.host_root))
                 );
             }
             _root_stack.add_named (wp, "welcome");
@@ -217,6 +223,7 @@ namespace Singularity.Apps {
 
             //  Sidebar
             _file_browser = new FileBrowserPane (this);
+            _file_browser.project_close_requested.connect (close_folder);
             set_sidebar_width (288);
             set_sidebar (workbench.sidebar);
             workbench.register_view (new WorkbenchView ("files", _("Files"),
@@ -391,7 +398,51 @@ namespace Singularity.Apps {
         public Gtk.Window get_toplevel () { return this; }
         public Singularity.Edit.Document? get_active_document () { return get_current_tab (); }
 
+        public GLib.File? project_folder { get { return _file_browser.project_root; } }
+
+        public void open_folder (GLib.File dir) {
+            _file_browser.open_project (dir);
+            set_sidebar_visible (true);
+            _sidebar_visible = true;
+            workbench.show_view ("files");
+            var tab = get_current_tab ();
+            if (tab != null && tab.file != null) _file_browser.reveal (tab.file);
+            if (_settings != null) {
+                _settings.set_string ("project-folder", dir.get_uri ());
+                string[] recent = { dir.get_uri () };
+                foreach (var u in _settings.get_strv ("recent-folders"))
+                    if (u != dir.get_uri () && recent.length < 10) recent += u;
+                _settings.set_strv ("recent-folders", recent);
+            }
+            _update_title ();
+        }
+
+        public void close_folder () {
+            _file_browser.close_project ();
+            if (_settings != null) _settings.set_string ("project-folder", "");
+            _update_title ();
+        }
+
+        public void open_folder_dialog (File? start = null) {
+            var dialog = new FileChooserNative (
+                _("Open Folder"), this, FileChooserAction.SELECT_FOLDER, _("Open"), _("Cancel"));
+            var dsh = Singularity.Edit.Dsh.get_default ();
+            try {
+                if (dsh != null) dialog.add_shortcut_folder (File.new_for_path (dsh.host_root));
+                if (start != null) dialog.set_current_folder (start);
+                else if (project_folder != null) dialog.set_current_folder (project_folder);
+            } catch (Error e) {
+            }
+            dialog.response.connect ((resp) => {
+                if (resp == ResponseType.ACCEPT && dialog.get_file () != null)
+                    open_folder (dialog.get_file ());
+                dialog.destroy ();
+            });
+            dialog.show ();
+        }
+
         public GLib.File? get_project_root () {
+            if (project_folder != null) return project_folder;
             var tab = get_current_tab ();
             var dir = tab != null && tab.file != null ? tab.file.get_parent () : _file_browser.current_dir;
             var start = dir;
@@ -1137,6 +1188,24 @@ namespace Singularity.Apps {
                 "document-open-symbolic", "Open File…", "Choose a file from disk",
                 "Ctrl+O", "Command", () => open_file_dialog ()));
             items.add (new CommandPaletteItem (
+                "folder-open-symbolic", _("Open Folder…"), _("Open a project folder in the sidebar"),
+                "Ctrl+Shift+O", "Command", () => open_folder_dialog ()));
+            if (project_folder != null) {
+                items.add (new CommandPaletteItem (
+                    "window-close-symbolic", _("Close Folder"), project_folder.get_basename (),
+                    null, "Command", () => close_folder ()));
+            }
+            if (_settings != null) {
+                foreach (var uri in _settings.get_strv ("recent-folders")) {
+                    var dir = File.new_for_uri (uri);
+                    if (project_folder != null && dir.equal (project_folder)) continue;
+                    if (dir.query_file_type (FileQueryInfoFlags.NONE) != FileType.DIRECTORY) continue;
+                    items.add (new CommandPaletteItem (
+                        "folder-symbolic", dir.get_basename (), dir.get_path (),
+                        null, _("Recent Folder"), () => open_folder (dir)));
+                }
+            }
+            items.add (new CommandPaletteItem (
                 "document-save-symbolic", "Save", null,
                 "Ctrl+S", "Command", () => save_current ()));
             items.add (new CommandPaletteItem (
@@ -1269,7 +1338,8 @@ namespace Singularity.Apps {
 
         private void _update_title () {
             var tab = get_current_tab ();
-            set_title (tab != null ? tab.title + _(" - Edit") : _("Edit"));
+            string app = project_folder != null ? (project_folder.get_basename () ?? _("Edit")) : _("Edit");
+            set_title (tab != null ? tab.title + " - " + app : app);
         }
 
         //  Session restore / save
@@ -1288,6 +1358,14 @@ namespace Singularity.Apps {
                 var f = File.new_for_uri (sidebar_path);
                 if (f.query_exists ())
                     _file_browser.navigate_to (f);
+            }
+            string project = _settings.get_string ("project-folder");
+            if (project != "") {
+                var p = File.new_for_uri (project);
+                if (p.query_file_type (FileQueryInfoFlags.NONE) == FileType.DIRECTORY) {
+                    _file_browser.open_project (p);
+                    _update_title ();
+                }
             }
 
             if (uris.length == 0) return;

@@ -261,6 +261,7 @@ namespace Singularity.Apps {
         private void setup_actions () {
             add_act ("new-file",       on_new_file);
             add_act ("open",           on_open);
+            add_act ("open-folder",    () => active_edit_window ()?.open_folder_dialog ());
             add_act ("save",           on_save);
             add_act ("save-as",        on_save_as);
             add_act ("open-online",    on_open_online);
@@ -390,6 +391,7 @@ namespace Singularity.Apps {
         private void setup_accels () {
             set_accels_for_action ("app.new-file",       {"<Ctrl>n"});
             set_accels_for_action ("app.open",           {"<Ctrl>o"});
+            set_accels_for_action ("app.open-folder",    {"<Ctrl><Shift>o"});
             set_accels_for_action ("app.save",           {"<Ctrl>s"});
             set_accels_for_action ("app.save-as",        {"<Ctrl><Shift>s"});
             set_accels_for_action ("app.close-tab",      {"<Ctrl>w"});
@@ -451,8 +453,10 @@ namespace Singularity.Apps {
             activate ();
             var window = active_edit_window ();
             if (window == null) return;
-            foreach (var f in files)
-                window.add_tab (f);
+            foreach (var f in files) {
+                if (f.query_file_type (FileQueryInfoFlags.NONE) == FileType.DIRECTORY) window.open_folder (f);
+                else window.add_tab (f);
+            }
         }
 
         private EditWindow? active_edit_window () {
