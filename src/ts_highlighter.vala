@@ -297,6 +297,9 @@ namespace Singularity.Apps {
             TS.QueryMatch match;
             uint32 cap_idx;
             while (qc.next_capture (out match, out cap_idx)) {
+                if (def.highlights_predicates != null &&
+                    !def.highlights_predicates.accepts (match, text_ptr, text_blen))
+                    continue;
                 unowned TS.QueryCapture cap = match.captures[cap_idx];
                 uint32 name_len = 0;
                 unowned string capture_name = def.highlights_query.capture_name_for_id (

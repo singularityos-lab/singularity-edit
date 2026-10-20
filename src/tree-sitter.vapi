@@ -126,9 +126,27 @@ namespace TS {
         public unowned QueryCapture[] captures;
     }
 
+    [CCode (cname = "TSQueryPredicateStepType", has_type_id = false, cprefix = "TSQueryPredicateStepType")]
+    public enum QueryPredicateStepType {
+        Done,
+        Capture,
+        String,
+    }
+
+    [SimpleType]
+    [CCode (cname = "TSQueryPredicateStep", has_type_id = false)]
+    public struct QueryPredicateStep {
+        public QueryPredicateStepType type;
+        public uint32 value_id;
+    }
+
     [CCode (cname = "TSQuery", free_function = "ts_query_delete")]
     [Compact]
     public class Query {
+        [CCode (cname = "ts_query_predicates_for_pattern", array_length_pos = 1.1, array_length_type = "uint32_t")]
+        public unowned QueryPredicateStep[] predicates_for_pattern (uint32 pattern_index);
+        [CCode (cname = "ts_query_string_value_for_id")]
+        public unowned string string_value_for_id (uint32 id, out uint32 length);
         [CCode (cname = "ts_query_new")]
         public Query (Language language,
                       [CCode (array_length = false)] uint8[] source,
