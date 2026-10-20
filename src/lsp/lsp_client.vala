@@ -21,6 +21,7 @@ namespace Singularity.Apps {
         public Json.Object? capabilities { get; private set; }
         public bool utf8_positions { get; private set; default = false; }
         public bool alive { get; private set; default = false; }
+        public Singularity.Edit.Dsh? dsh { get; set; }
 
         public signal void notification (string method, Json.Node? prm);
         public signal void log_line (string line);
@@ -40,7 +41,7 @@ namespace Singularity.Apps {
         public void start (string[] argv) throws Error {
             var launcher = new SubprocessLauncher (SubprocessFlags.STDIN_PIPE | SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE);
             launcher.set_cwd (root_path);
-            proc = launcher.spawnv (argv);
+            proc = launcher.spawnv (dsh != null ? dsh.wrap (argv, root_path) : argv);
             input = new DataInputStream (proc.get_stdout_pipe ());
             input.newline_type = DataStreamNewlineType.ANY;
             output = proc.get_stdin_pipe ();
@@ -76,6 +77,7 @@ namespace Singularity.Apps {
             var root = new Json.Node (Json.NodeType.OBJECT);
             root.set_object (message);
             var body = Json.to_string (root, false);
+            if (dsh != null) body = dsh.to_guest_text (body);
             var frame = "Content-Length: %d\r\n\r\n%s".printf (body.length, body);
             try {
                 size_t written;
@@ -199,8 +201,10 @@ namespace Singularity.Apps {
                     yield input.read_all_async (buf[0:length], Priority.DEFAULT, null, out read);
                     if (read != length) return;
                     buf[length] = 0;
+                    string text = (string) buf;
+                    if (dsh != null) text = dsh.to_host_text (text);
                     var parser = new Json.Parser ();
-                    parser.load_from_data ((string) buf, (ssize_t) length);
+                    parser.load_from_data (text, -1);
                     var root = parser.get_root ();
                     if (root != null && root.get_node_type () == Json.NodeType.OBJECT)
                         dispatch (root.get_object ());

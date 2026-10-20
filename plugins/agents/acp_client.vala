@@ -43,6 +43,8 @@ namespace EditAgents {
         public signal void stderr_line (string line);
         public signal void exited ();
 
+        public Singularity.Edit.Dsh? dsh { get; set; }
+
         private Subprocess? proc;
         private DataInputStream input;
         private OutputStream output;
@@ -86,6 +88,7 @@ namespace EditAgents {
             var node = new Json.Node (Json.NodeType.OBJECT);
             node.set_object (message);
             var line = Json.to_string (node, false) + "\n";
+            if (dsh != null) line = dsh.to_guest_text (line);
             try {
                 size_t written;
                 output.write_all (line.data, out written);
@@ -171,6 +174,7 @@ namespace EditAgents {
                         if (line != "") stderr_line (line);
                         continue;
                     }
+                    if (dsh != null) line = dsh.to_host_text (line);
                     var parser = new Json.Parser ();
                     try {
                         parser.load_from_data (line);

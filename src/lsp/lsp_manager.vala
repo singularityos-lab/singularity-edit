@@ -66,7 +66,12 @@ namespace Singularity.Apps {
             if (language == null) return null;
             var list = by_language.lookup (language);
             if (list == null) return null;
+            var dsh = Singularity.Edit.Dsh.for_file (file);
             foreach (var spec in list.data) {
+                if (dsh != null) {
+                    if (spec.name == "tsc" || !dsh.has_program (spec.argv[0])) continue;
+                    return spec;
+                }
                 if (Environment.find_program_in_path (spec.argv[0]) == null) continue;
                 if (usable (spec, file)) return spec;
             }
@@ -127,7 +132,8 @@ namespace Singularity.Apps {
             var spec = spec_for (language, file);
             if (spec == null) return null;
             var root = root_for (file, spec.markers);
-            var key = spec.name + "|" + root;
+            var dsh = Singularity.Edit.Dsh.for_file (file);
+            var key = (dsh != null ? "dsh|" : "") + spec.name + "|" + root;
             var existing = clients.lookup (key);
             if (existing != null && !starting.contains (key))
                 return existing.alive ? existing : null;
@@ -142,6 +148,7 @@ namespace Singularity.Apps {
             }
             starting.insert (key, new GenericArray<LspWaiter> ());
             var client = new LspClient (spec.name, root);
+            client.dsh = dsh;
             clients.insert (key, client);
             client.notification.connect ((method, prm) => on_notification (client, method, prm));
             client.log_line.connect ((line) => log_line (spec.name, line));
@@ -153,7 +160,7 @@ namespace Singularity.Apps {
             server_state (spec.name, "starting");
             try {
                 client.start (spec.argv);
-                yield client.initialize (init_options (spec, root));
+                yield client.initialize (dsh != null ? null : init_options (spec, root));
                 server_state (spec.name, "ready");
             } catch (Error e) {
                 log_line (spec.name, "start failed: " + e.message);

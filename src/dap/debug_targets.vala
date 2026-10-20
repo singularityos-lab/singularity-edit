@@ -9,9 +9,22 @@ namespace Singularity.Apps {
 
     public class DebugTargets : Object {
 
+        private static Singularity.Edit.Dsh? dsh;
+
         public static DebugTarget resolve (EditorTab tab) throws Error {
             if (tab.file == null || tab.file.get_path () == null)
                 throw new DebugError.UNSUPPORTED (_("Save the file before debugging"));
+            dsh = Singularity.Edit.Dsh.for_file (tab.file);
+            var target = resolve_target (tab);
+            target.dsh = dsh;
+            return target;
+        }
+
+        private static bool has (string program) {
+            return dsh != null ? dsh.has_program (program) : Environment.find_program_in_path (program) != null;
+        }
+
+        private static DebugTarget resolve_target (EditorTab tab) throws Error {
             string lang = tab.get_language_id () ?? "";
             string path = tab.file.get_path ();
             var from_vscode = from_launch_json (tab, lang);
@@ -37,7 +50,7 @@ namespace Singularity.Apps {
         }
 
         private static void need (string program) throws Error {
-            if (Environment.find_program_in_path (program) == null)
+            if (!has (program))
                 throw new DebugError.MISSING (_("%s is not installed").printf (program));
         }
 
@@ -49,10 +62,10 @@ namespace Singularity.Apps {
             t.launch.set_string_member ("cwd", cwd);
             t.launch.set_array_member ("args", new Json.Array ());
             t.launch.set_boolean_member ("stopOnEntry", false);
-            if (Environment.find_program_in_path ("lldb-dap") != null) {
+            if (has ("lldb-dap")) {
                 t.adapter_id = "lldb-dap";
                 t.argv = { "lldb-dap" };
-            } else if (Environment.find_program_in_path ("gdb") != null) {
+            } else if (has ("gdb")) {
                 t.adapter_id = "gdb";
                 t.argv = { "gdb", "-q", "-i", "dap" };
             } else {
@@ -79,7 +92,8 @@ namespace Singularity.Apps {
         }
 
         private static string build_dir () {
-            var dir = Path.build_filename (Environment.get_user_cache_dir (), "singularity-edit", "debug");
+            var cache = dsh != null ? Path.build_filename (dsh.host_root, ".cache") : Environment.get_user_cache_dir ();
+            var dir = Path.build_filename (cache, "singularity-edit", "debug");
             DirUtils.create_with_parents (dir, 0755);
             return dir;
         }

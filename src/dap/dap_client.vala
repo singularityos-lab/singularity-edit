@@ -11,6 +11,7 @@ namespace Singularity.Apps {
     public class DapClient : Object {
         public bool alive { get; private set; default = false; }
         public Json.Object? capabilities { get; private set; }
+        public Singularity.Edit.Dsh? dsh { get; set; }
 
         public signal void event_received (string name, Json.Object body);
         public signal void log_line (string line);
@@ -26,7 +27,7 @@ namespace Singularity.Apps {
         public void start_stdio (string[] argv, string cwd) throws Error {
             var launcher = new SubprocessLauncher (SubprocessFlags.STDIN_PIPE | SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE);
             launcher.set_cwd (cwd);
-            proc = launcher.spawnv (argv);
+            proc = launcher.spawnv (dsh != null ? dsh.wrap (argv, cwd) : argv);
             attach_streams (proc.get_stdout_pipe (), proc.get_stdin_pipe ());
             read_stderr.begin (new DataInputStream (proc.get_stderr_pipe ()));
             watch_process ();
@@ -35,7 +36,7 @@ namespace Singularity.Apps {
         public async void start_tcp (string[] argv, string cwd, uint16 port) throws Error {
             var launcher = new SubprocessLauncher (SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_MERGE);
             launcher.set_cwd (cwd);
-            proc = launcher.spawnv (argv);
+            proc = launcher.spawnv (dsh != null ? dsh.wrap (argv, cwd) : argv);
             read_stderr.begin (new DataInputStream (proc.get_stdout_pipe ()));
             watch_process ();
             var client = new SocketClient ();
@@ -98,6 +99,7 @@ namespace Singularity.Apps {
             var root = new Json.Node (Json.NodeType.OBJECT);
             root.set_object (message);
             var body = Json.to_string (root, false);
+            if (dsh != null) body = dsh.to_guest_text (body);
             var frame = "Content-Length: %d\r\n\r\n%s".printf (body.length, body);
             try {
                 size_t written;
@@ -201,7 +203,9 @@ namespace Singularity.Apps {
                     }
                     buf[length] = 0;
                     var parser = new Json.Parser ();
-                    parser.load_from_data ((string) buf, (ssize_t) length);
+                    string text = (string) buf;
+                    if (dsh != null) text = dsh.to_host_text (text);
+                    parser.load_from_data (text, -1);
                     var root = parser.get_root ();
                     if (root != null && root.get_node_type () == Json.NodeType.OBJECT)
                         dispatch (root.get_object ());

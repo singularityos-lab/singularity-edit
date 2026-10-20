@@ -19,6 +19,7 @@ namespace Singularity.Apps {
         public string cwd;
         public string[]? build;
         public Json.Object launch;
+        public Singularity.Edit.Dsh? dsh;
     }
 
     public class DebugManager : Object {
@@ -151,6 +152,7 @@ namespace Singularity.Apps {
                 }
             }
             try {
+                client.dsh = target.dsh;
                 if (target.tcp) yield client.start_tcp (target.argv, target.cwd, target.port);
                 else client.start_stdio (target.argv, target.cwd);
                 yield client.initialize (target.adapter_id);
@@ -201,7 +203,7 @@ namespace Singularity.Apps {
             try {
                 var launcher = new SubprocessLauncher (SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_MERGE);
                 launcher.set_cwd (target.cwd);
-                var proc = launcher.spawnv (target.build);
+                var proc = launcher.spawnv (target.dsh != null ? target.dsh.wrap (target.build, target.cwd) : target.build);
                 var stream = new DataInputStream (proc.get_stdout_pipe ());
                 while (true) {
                     size_t len;

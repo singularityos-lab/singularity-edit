@@ -89,7 +89,7 @@ resources = gnome.compile_resources(
 )
 
 edit_lib = shared_library('singularity-edit-1',
-  files('lib/api.vala', 'lib/workbench.vala'),
+  files('lib/api.vala', 'lib/dsh.vala', 'lib/workbench.vala'),
   dependencies: [gtk_dep, gtksource_dep, libsingularity_dep],
   vala_header: 'singularity-edit.h',
   vala_vapi: 'singularity-edit-1.vapi',
@@ -160,6 +160,9 @@ test('queries', test_queries,
 
 test('line-diff', executable('test-line-diff', files('tests/test_line_diff.vala'),
   dependencies: [gtk_dep, gee_dep, libsingularity_dep]))
+
+test('dsh', executable('test-dsh', files('tests/test_dsh.vala'),
+  dependencies: [edit_lib_dep]))
 
 executable('test-plugin-catalog', files('tests/test_plugin_catalog.vala'),
   dependencies: [gtk_dep, gee_dep, libsingularity_dep, dependency('libpeas-2')])

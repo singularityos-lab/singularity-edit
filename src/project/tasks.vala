@@ -23,11 +23,14 @@ namespace Singularity.Apps {
             return FileUtils.test (Path.build_filename (dir, name), FileTest.EXISTS);
         }
 
+        private static Singularity.Edit.Dsh? dsh;
+
         private static bool tool (string name) {
-            return Environment.find_program_in_path (name) != null;
+            return dsh != null ? dsh.has_program (name) : Environment.find_program_in_path (name) != null;
         }
 
         public static TaskDef[] detect (string root) {
+            dsh = Singularity.Edit.Dsh.for_path (root);
             TaskDef[] list = {};
             foreach (var t in from_vscode (root)) list += t;
             if (has (root, "Cargo.toml") && tool ("cargo")) {
@@ -194,7 +197,8 @@ namespace Singularity.Apps {
                 launcher.set_cwd (task.cwd);
                 launcher.setenv ("TERM", "dumb", true);
                 launcher.setenv ("CARGO_TERM_COLOR", "never", true);
-                var p = launcher.spawnv (task.argv);
+                var dsh = Singularity.Edit.Dsh.for_path (task.cwd);
+                var p = launcher.spawnv (dsh != null ? dsh.wrap (task.argv, task.cwd, { "TERM=dumb", "CARGO_TERM_COLOR=never" }) : task.argv);
                 proc = p;
                 read.begin (p, task);
             } catch (Error e) {
@@ -270,6 +274,8 @@ namespace Singularity.Apps {
                 int ce = line.substring (0, e).char_count ();
                 if (it.get_line_offset () < cs || it.get_line_offset () > ce) continue;
                 string path = info.fetch (1);
+                var dsh = Singularity.Edit.Dsh.for_path (cwd);
+                if (dsh != null && Path.is_absolute (path)) path = dsh.to_host (path);
                 if (!Path.is_absolute (path)) path = Path.build_filename (cwd, path);
                 if (!FileUtils.test (path, FileTest.EXISTS)) return;
                 string col = info.fetch (3);

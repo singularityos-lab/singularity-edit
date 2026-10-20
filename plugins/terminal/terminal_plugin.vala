@@ -212,10 +212,26 @@ namespace EditTerminal {
         private void spawn () {
             if (terminal == null) return;
             terminal.reset (true, true);
+            var dsh = Singularity.Edit.Dsh.for_path (project_dir ());
+            if (dsh != null) {
+                string cd = "cd " + Singularity.Edit.Dsh.quote (dsh.to_guest (project_dir ())) + "\n";
+                terminal.spawn_async (Vte.PtyFlags.DEFAULT, Environment.get_home_dir (), { dsh.program }, null,
+                    (SpawnFlags) 0, null, -1, null, (t, pid, err) => {
+                        if (err != null) workspace.notify_user (err.message);
+                        else terminal.feed_child (cd.data);
+                    });
+                return;
+            }
             terminal.spawn_async (Vte.PtyFlags.DEFAULT, project_dir (), { login_shell () }, null,
                 (SpawnFlags) 0, null, -1, null, (t, pid, err) => {
                     if (err != null) workspace.notify_user (err.message);
                 });
+        }
+
+        private string[]? dsh_leafs_command () {
+            var dsh = Singularity.Edit.Dsh.for_path (project_dir ());
+            if (dsh == null) return null;
+            return dsh.wrap (dsh.has_program ("bash") ? new string[] { "bash", "-l" } : new string[] { "sh", "-i" }, project_dir ());
         }
 
         private void apply_theme () {
@@ -267,7 +283,15 @@ namespace EditTerminal {
                 var launcher = new SubprocessLauncher (SubprocessFlags.NONE);
                 launcher.set_cwd (project_dir ());
                 var info = new DesktopAppInfo (LEAFS + ".desktop");
-                launcher.spawnv ({ info.get_executable (), "--working-directory=" + project_dir (), "-e", "dsh" });
+                var inner = dsh_leafs_command ();
+                if (inner != null) {
+                    launcher.set_cwd (Environment.get_home_dir ());
+                    string[] argv = { info.get_executable (), "--working-directory=" + Environment.get_home_dir (), "-e" };
+                    foreach (var a in inner) argv += a;
+                    launcher.spawnv (argv);
+                } else {
+                    launcher.spawnv ({ info.get_executable (), "--working-directory=" + project_dir (), "-e", "dsh" });
+                }
             } catch (Error e) {
                 workspace.notify_user (e.message);
             }
@@ -283,7 +307,15 @@ namespace EditTerminal {
                 launcher.set_cwd (project_dir ());
                 var info = new DesktopAppInfo (LEAFS + ".desktop");
                 string exec = info.get_executable ();
-                launcher.spawnv ({ exec, "--working-directory=" + project_dir () });
+                var inner = dsh_leafs_command ();
+                if (inner != null) {
+                    launcher.set_cwd (Environment.get_home_dir ());
+                    string[] argv = { exec, "--working-directory=" + Environment.get_home_dir (), "-e" };
+                    foreach (var a in inner) argv += a;
+                    launcher.spawnv (argv);
+                } else {
+                    launcher.spawnv ({ exec, "--working-directory=" + project_dir () });
+                }
             } catch (Error e) {
                 workspace.notify_user (e.message);
             }

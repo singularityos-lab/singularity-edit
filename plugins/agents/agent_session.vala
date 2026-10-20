@@ -134,6 +134,7 @@ namespace EditAgents {
         public HashTable<string, ChangedFile> changes = new HashTable<string, ChangedFile> (str_hash, str_equal);
         private RestorePoint? restore;
         private HostProxy? proxy;
+        private Singularity.Edit.Dsh? dsh;
         private uint deadline;
         private Cancellable cancel = new Cancellable ();
 
@@ -158,13 +159,21 @@ namespace EditAgents {
                 string[] env = Environ.get ();
                 foreach (var e in launch.env) env += e;
                 string[] argv = launch.argv;
+                var shell = Singularity.Edit.Dsh.for_path (root);
+                if (mode != Mode.AUTOPILOT && shell != null && argv.length > 0
+                    && (!Path.is_absolute (argv[0]) || shell.owns (argv[0])) && shell.has_program (shell.to_guest (argv[0]))) {
+                    dsh = shell;
+                    client.dsh = shell;
+                    argv = shell.wrap (argv, root, launch.env);
+                    env = Environ.get ();
+                }
                 if (mode == Mode.AUTOPILOT) {
                     restore = yield RestorePoint.create (root);
                     proxy = new HostProxy (agent.hosts);
                     env = proxy.apply (env);
                     argv = Sandbox.wrap (argv, root);
                 }
-                client.start (argv, root, env);
+                client.start (argv, dsh != null ? Environment.get_home_dir () : root, env);
                 running = true;
                 var caps = new Json.Object ();
                 var fs = new Json.Object ();
@@ -643,6 +652,19 @@ namespace EditAgents {
             if (mode == Mode.AUTOPILOT) {
                 if (proxy != null) env = proxy.apply (env);
                 argv = Sandbox.wrap (argv, root);
+            }
+            if (dsh != null) {
+                string[] extra = {};
+                if (prm.has_member ("env")) {
+                    var e = prm.get_array_member ("env");
+                    for (uint i = 0; i < e.get_length (); i++) {
+                        var v = e.get_object_element (i);
+                        extra += v.get_string_member ("name") + "=" + v.get_string_member ("value");
+                    }
+                }
+                argv = dsh.wrap (argv, cwd, extra);
+                cwd = Environment.get_home_dir ();
+                env = Environ.get ();
             }
             try {
                 var launcher = new SubprocessLauncher (SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_MERGE);
