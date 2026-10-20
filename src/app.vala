@@ -160,6 +160,7 @@ namespace Singularity.Apps {
             var f1 = new GLib.Menu ();
             f1.append (_("New File"), "app.new-file");
             f1.append (_("Open…"), "app.open");
+            f1.append (_("Open Folder…"), "app.open-folder");
             f1.append (_("Open from Online Account…"), "app.open-online");
             file.append_section (null, f1);
             var f2 = new GLib.Menu ();
