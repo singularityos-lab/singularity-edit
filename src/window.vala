@@ -97,6 +97,15 @@ namespace Singularity.Apps {
                 "Choose a file from disk to edit.",
                 () => open_file_dialog ()
             );
+            var dsh = Singularity.Edit.Dsh.get_default ();
+            if (dsh != null) {
+                wp.add_action (
+                    "applications-engineering",
+                    _("Developer Files"),
+                    _("Edit a project from the developer shell with its own tools."),
+                    () => open_file_dialog (File.new_for_path (dsh.host_root))
+                );
+            }
             _root_stack.add_named (wp, "welcome");
 
             // Editor area: tab container + statusbar
@@ -421,9 +430,15 @@ namespace Singularity.Apps {
             debug_strip_revealer.reveal_child = widget != null;
         }
 
-        public void open_file_dialog () {
+        public void open_file_dialog (File? folder = null) {
             var dialog = new FileChooserNative (
                 "Open File", this, FileChooserAction.OPEN, "Open", "Cancel");
+            var dsh = Singularity.Edit.Dsh.get_default ();
+            try {
+                if (dsh != null) dialog.add_shortcut_folder (File.new_for_path (dsh.host_root));
+                if (folder != null) dialog.set_current_folder (folder);
+            } catch (Error e) {
+            }
             dialog.response.connect ((resp) => {
                 if (resp == ResponseType.ACCEPT)
                     add_tab (dialog.get_file ());
