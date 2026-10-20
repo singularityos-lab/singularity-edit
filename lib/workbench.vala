@@ -110,11 +110,13 @@ namespace Singularity.Edit {
         public void remove_view (string id) {
             for (uint i = 0; i < views.length; i++) {
                 if (views[i].id != id) continue;
-                if (stack != null) stack.remove (views[i].widget);
+                if (inspector != null) inspector.remove_page (id);
+                else stack.remove (views[i].widget);
                 views.remove_index (i);
                 break;
             }
-            if (inspector == null) rebuild_tabs ();
+            if (inspector != null) inspector.switcher.visible = views.length > 1;
+            else rebuild_tabs ();
         }
 
         private void rebuild_tabs () {

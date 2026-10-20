@@ -38,6 +38,7 @@ namespace EditAgents {
         }
 
         private void attach (Workspace ws) {
+            foreach (var a in attached.data) if (a.workspace == ws) return;
             attached.add (new AgentWorkspace (ws));
         }
 
