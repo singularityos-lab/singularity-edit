@@ -1,14 +1,26 @@
 using Gtk;
 using GLib;
+using Singularity.Edit;
 using Singularity;
 using Singularity.Widgets;
 
 namespace Singularity.Apps {
 
     [GtkTemplate(ui = "/dev/sinty/edit/ui/main.ui")]
-    public class EditWindow : Singularity.Widgets.Window {
+    public class EditWindow : Singularity.Widgets.Window, Singularity.Edit.Workspace {
 
         public Singularity.Widgets.TabContainer tab_container { get; private set; }
+        public Workbench workbench { get; private set; }
+        public Gtk.Revealer debug_strip_revealer { get; private set; }
+        private ProblemsView _problems;
+        public DebugController debug { get; private set; }
+        private TasksView _tasks;
+        private MenuButton _people_btn;
+        private Label _people_count;
+        private ProjectSearchView _search;
+        private Gtk.Button _problems_btn;
+        private Gtk.Label _errors_lbl;
+        private Gtk.Label _warnings_lbl;
 
         private EditApp         _app;
         private GLib.Settings?  _settings;
@@ -55,7 +67,11 @@ namespace Singularity.Apps {
             notify["fullscreened"].connect (() => _app.sync_document_actions ());
             close_request.connect(_on_close_request);
             if (restore_session) _restore_session ();
+            workspace_ready = true;
+            _app.announce_workspace (this);
         }
+
+        public bool workspace_ready { get; private set; default = false; }
 
         private void _build_ui () {
             set_title (_("Edit"));
@@ -107,13 +123,69 @@ namespace Singularity.Apps {
             _outline_revealer.set_child (_outline_panel);
             _editor_box.append (_outline_revealer);
 
+            workbench = new Workbench ();
+            _editor_box.append (workbench.panel_revealer);
+
+            debug = new DebugController (this);
+            _problems = new ProblemsView ();
+            _problems.activated.connect (_on_problem_activated);
+            workbench.register_view (new WorkbenchView ("problems", _("Problems"),
+                WorkbenchRegion.PANEL, _problems, 0));
+            _problems_btn = new Gtk.Button ();
+            _problems_btn.add_css_class ("flat");
+            _problems_btn.visible = false;
+            var counts = new Box (Orientation.HORIZONTAL, 5);
+            var err_img = new Image.from_icon_name ("edit-diagnostic-error");
+            err_img.pixel_size = 12;
+            counts.append (err_img);
+            _errors_lbl = new Label ("0");
+            counts.append (_errors_lbl);
+            var warn_img = new Image.from_icon_name ("edit-diagnostic-warning");
+            warn_img.pixel_size = 12;
+            warn_img.margin_start = 6;
+            counts.append (warn_img);
+            _warnings_lbl = new Label ("0");
+            counts.append (_warnings_lbl);
+            _problems_btn.child = counts;
+            _problems_btn.clicked.connect (() => {
+                if (workbench.panel_revealer.reveal_child)
+                    workbench.panel_revealer.reveal_child = false;
+                else
+                    workbench.show_view ("problems");
+            });
+            workbench.add_status_item (_problems_btn, StatusAlign.START, _("Problems"));
+            _people_btn = new MenuButton ();
+            _people_btn.add_css_class ("flat");
+            var people_box = new Box (Orientation.HORIZONTAL, 5);
+            var people_icon = new Image.from_icon_name ("system-users-symbolic");
+            people_icon.pixel_size = 12;
+            people_box.append (people_icon);
+            _people_count = new Label ("");
+            people_box.append (_people_count);
+            _people_btn.child = people_box;
+            _people_btn.visible = false;
+            var people_pop = new Popover ();
+            people_pop.show.connect (() => fill_people (people_pop));
+            _people_btn.popover = people_pop;
+            workbench.add_status_item (_people_btn, StatusAlign.END, _("People"));
+            EditCollab.get_default ().changed.connect (() => sync_people ());
+
             _statusbar = new StatusBar ();
+            _statusbar.attach_items (workbench.status_start, workbench.status_end);
             _statusbar.outline_toggled.connect (_on_outline_toggled);
             if (_settings != null)
                 _settings.bind ("show-statusbar", _statusbar, "visible", SettingsBindFlags.DEFAULT);
             _editor_box.append (_statusbar);
 
-            _root_stack.add_named (_editor_box, "editor");
+            debug_strip_revealer = new Gtk.Revealer ();
+            debug_strip_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_DOWN;
+            debug_strip_revealer.reveal_child = false;
+            _editor_box.prepend (debug_strip_revealer);
+
+            var workspace = new Box (Orientation.HORIZONTAL, 0);
+            workspace.append (_editor_box);
+            workspace.append (workbench.inspector_revealer);
+            _root_stack.add_named (workspace, "editor");
             _root_stack.visible_child_name = "welcome";
 
             // root_overlay (from the template) lets the command palette float
@@ -136,8 +208,18 @@ namespace Singularity.Apps {
 
             //  Sidebar
             _file_browser = new FileBrowserPane (this);
-            set_sidebar_width (240);
-            set_sidebar (_file_browser);
+            set_sidebar_width (288);
+            set_sidebar (workbench.sidebar);
+            workbench.register_view (new WorkbenchView ("files", _("Files"),
+                WorkbenchRegion.SIDEBAR, _file_browser, 0));
+            _search = new ProjectSearchView (this);
+            _search.open_location.connect ((p, l, c) => open_file (File.new_for_path (p), l, c));
+            workbench.register_view (new WorkbenchView ("search", _("Search"),
+                WorkbenchRegion.SIDEBAR, _search, 10));
+            _tasks = new TasksView ();
+            _tasks.open_location.connect ((p, l, c) => open_file (File.new_for_path (p), l, c));
+            workbench.register_view (new WorkbenchView ("tasks", _("Tasks"),
+                WorkbenchRegion.PANEL, _tasks, 20));
             set_sidebar_visible (_sidebar_visible);
 
             //  Toolbar
@@ -150,7 +232,7 @@ namespace Singularity.Apps {
         }
 
         private void _setup_toolbar () {
-            var sidebar_btn = add_bubble_icon ("sidebar-show-symbolic", "Toggle Sidebar (F9)", () => {});
+            var sidebar_btn = add_bubble_icon ("sidebar-show-symbolic", "Toggle Sidebar (Ctrl+B)", () => {});
             sidebar_btn.action_name = "app.toggle-sidebar";
 
             var new_btn  = add_bubble_icon ("document-new-symbolic",  "New (Ctrl+N)",   () => {});
@@ -171,7 +253,12 @@ namespace Singularity.Apps {
 
             tab_container.notebook.notify["page"].connect (() => sync_md_btn_visibility ());
             tab_container.notebook.switch_page.connect ((page, _idx) => {
-                GLib.Idle.add (() => { sync_md_btn_visibility (); return GLib.Source.REMOVE; });
+                GLib.Idle.add (() => {
+                    sync_md_btn_visibility ();
+                    sync_people ();
+                    active_document_changed ();
+                    return GLib.Source.REMOVE;
+                });
             });
 
             // Tabs are rendered as a ChipBar pinned at the bottom of the
@@ -242,10 +329,21 @@ namespace Singularity.Apps {
             tab_container.add_tab (tab, tab.title);
             tab.state_changed.connect  (_on_tab_state_changed);
             tab.cursor_changed.connect (_on_tab_cursor_changed);
+            tab.lsp_changed.connect (_on_tab_lsp_changed);
+            _on_tab_lsp_changed (tab);
+            DebugManager.get_default ().install (tab);
+            tab.view.line_mark_activated.connect ((iter, button, state, n_presses) => {
+                if (button == 1) DebugManager.get_default ().toggle (tab, iter.get_line ());
+            });
+            document_added (tab);
             ulong handler = tab.notify["is-markdown"].connect (() => sync_md_btn_visibility ());
             _markdown_handlers.insert (tab, handler);
             tab_container.notebook.set_current_page (
                 tab_container.notebook.page_num (tab));
+            Idle.add (() => {
+                if (tab.get_root () == this) tab.view.grab_focus ();
+                return Source.REMOVE;
+            });
             if (_settings != null && _settings.get_boolean ("show-minimap"))
                 tab.set_minimap_visible (true);
             sync_md_btn_visibility ();
@@ -254,6 +352,11 @@ namespace Singularity.Apps {
         private void _disconnect_tab (EditorTab tab) {
             tab.state_changed.disconnect  (_on_tab_state_changed);
             tab.cursor_changed.disconnect (_on_tab_cursor_changed);
+            tab.lsp_changed.disconnect (_on_tab_lsp_changed);
+            _problems.untrack (tab);
+            DebugManager.get_default ().capture (tab);
+            document_removed (tab);
+            _update_problem_counts ();
             ulong handler = _markdown_handlers.lookup (tab);
             if (handler != 0) tab.disconnect (handler);
             _markdown_handlers.remove (tab);
@@ -275,9 +378,47 @@ namespace Singularity.Apps {
             if (tab.file != null) _file_browser.navigate_to_file_dir (tab.file);
         }
 
-        public void open_file (GLib.File file) {
+        public Singularity.Edit.Workbench get_workbench () { return workbench; }
+        public Gtk.Window get_toplevel () { return this; }
+        public Singularity.Edit.Document? get_active_document () { return get_current_tab (); }
+
+        public GLib.File? get_project_root () {
+            var tab = get_current_tab ();
+            var dir = tab != null && tab.file != null ? tab.file.get_parent () : _file_browser.current_dir;
+            var start = dir;
+            while (dir != null) {
+                if (dir.get_child (".git").query_exists ()) return dir;
+                dir = dir.get_parent ();
+            }
+            return start;
+        }
+
+        public Singularity.Edit.Document[] documents () {
+            Singularity.Edit.Document[] out_ = {};
+            foreach (var t in _collect_tabs ()) out_ += t;
+            return out_;
+        }
+
+        public Singularity.Edit.Document? open_file (GLib.File file, int line = -1, int column = -1) {
             add_tab (file);
             _file_browser.navigate_to_file_dir (file);
+            var tab = get_current_tab ();
+            if (tab != null && line >= 0) {
+                Idle.add (() => {
+                    tab.goto_position (line, column);
+                    return Source.REMOVE;
+                });
+            }
+            return tab;
+        }
+
+        public void notify_user (string message) {
+            add_toast (new Toast (message));
+        }
+
+        public void set_overlay_strip (Gtk.Widget? widget) {
+            debug_strip_revealer.child = widget;
+            debug_strip_revealer.reveal_child = widget != null;
         }
 
         public void open_file_dialog () {
@@ -408,6 +549,249 @@ namespace Singularity.Apps {
                 _root_stack.visible_child_name = "welcome";
                 set_title (_("Edit"));
             }
+        }
+
+        private void _on_tab_lsp_changed (EditorTab tab) {
+            if (tab.lsp != null) _problems.track (tab);
+            _problems.refresh ();
+            _update_problem_counts ();
+        }
+
+        private void _update_problem_counts () {
+            int errors, warnings;
+            _problems.counts (out errors, out warnings);
+            _errors_lbl.label = errors.to_string ();
+            _warnings_lbl.label = warnings.to_string ();
+            bool any_lsp = false;
+            foreach (var t in _collect_tabs ()) if (t.lsp != null) any_lsp = true;
+            _problems_btn.visible = any_lsp;
+        }
+
+        private void _on_problem_activated (EditorTab tab, int line, int col) {
+            int idx = tab_container.notebook.page_num (tab);
+            if (idx >= 0) tab_container.notebook.set_current_page (idx);
+            if (tab.lsp == null) return;
+            var it = tab.lsp.iter_from_lsp (line, col);
+            tab.buffer.place_cursor (it);
+            tab.view.scroll_to_iter (it, 0.2, false, 0.0, 0.0);
+            tab.view.grab_focus ();
+        }
+
+        public void goto_definition () {
+            var tab = get_current_tab ();
+            if (tab == null || tab.lsp == null) return;
+            ulong handler = 0;
+            handler = tab.lsp.definition_found.connect ((uri, line, character) => {
+                tab.lsp.disconnect (handler);
+                open_file (File.new_for_uri (uri), line, character);
+            });
+            tab.lsp.goto_definition.begin ((obj, res) => {
+                if (!tab.lsp.goto_definition.end (res) && handler != 0) tab.lsp.disconnect (handler);
+            });
+        }
+
+        private Popover cursor_popover (EditorTab tab) {
+            Gtk.TextIter it;
+            tab.buffer.get_iter_at_mark (out it, tab.buffer.get_insert ());
+            Gdk.Rectangle r;
+            tab.view.get_iter_location (it, out r);
+            int wx, wy;
+            tab.view.buffer_to_window_coords (Gtk.TextWindowType.WIDGET, r.x, r.y, out wx, out wy);
+            r.x = wx;
+            r.y = wy;
+            var pop = new Popover ();
+            pop.add_css_class ("edit-cursor-popover");
+            pop.set_parent (tab.view);
+            pop.pointing_to = r;
+            pop.position = PositionType.BOTTOM;
+            pop.has_arrow = false;
+            pop.closed.connect (() => {
+                Idle.add (() => {
+                    pop.unparent ();
+                    return Source.REMOVE;
+                });
+            });
+            return pop;
+        }
+
+        public void rename_symbol () {
+            var tab = get_current_tab ();
+            if (tab == null || tab.lsp == null || tab.lsp.client == null) return;
+            if (!tab.lsp.client.supports ("renameProvider")) {
+                notify_user (_("Renaming is not available for this file"));
+                return;
+            }
+            var pop = cursor_popover (tab);
+            var entry = new Entry ();
+            entry.text = tab.lsp.word_at_cursor ();
+            entry.width_chars = 28;
+            entry.activates_default = false;
+            var box = new Box (Orientation.VERTICAL, 6);
+            box.margin_start = box.margin_end = box.margin_top = box.margin_bottom = 6;
+            var title = new Label (_("Rename Symbol"));
+            title.xalign = 0;
+            title.add_css_class ("caption-heading");
+            box.append (title);
+            box.append (entry);
+            pop.child = box;
+            entry.activate.connect (() => {
+                var name = entry.text.strip ();
+                pop.popdown ();
+                if (name == "") return;
+                bool utf8 = tab.lsp.client.utf8_positions;
+                tab.lsp.rename.begin (name, (obj, res) => {
+                    var edit = tab.lsp.rename.end (res);
+                    if (edit == null) {
+                        notify_user (_("Nothing to rename here"));
+                        return;
+                    }
+                    LspManager.get_default ().workspace_edit (edit, utf8);
+                });
+            });
+            pop.popup ();
+            entry.grab_focus ();
+            entry.select_region (0, -1);
+        }
+
+        public void quick_fix () {
+            var tab = get_current_tab ();
+            if (tab == null || tab.lsp == null) return;
+            tab.lsp.code_actions.begin ((obj, res) => {
+                var actions = tab.lsp.code_actions.end (res);
+                if (actions == null || actions.get_length () == 0) {
+                    notify_user (_("No quick fixes here"));
+                    return;
+                }
+                var pop = cursor_popover (tab);
+                var list = new Box (Orientation.VERTICAL, 0);
+                list.margin_top = list.margin_bottom = 4;
+                for (uint i = 0; i < actions.get_length () && i < 12; i++) {
+                    var action = actions.get_object_element (i);
+                    var btn = new Button ();
+                    btn.add_css_class ("flat");
+                    btn.add_css_class ("edit-quick-fix");
+                    var label = new Label (action.get_string_member ("title"));
+                    label.xalign = 0;
+                    label.ellipsize = Pango.EllipsizeMode.END;
+                    label.max_width_chars = 60;
+                    btn.child = label;
+                    btn.clicked.connect (() => {
+                        pop.popdown ();
+                        tab.lsp.run_code_action.begin (action);
+                    });
+                    list.append (btn);
+                }
+                pop.child = list;
+                pop.popup ();
+            });
+        }
+
+        private void sync_people () {
+            var tab = get_current_tab ();
+            var d = tab != null ? EditCollab.get_default ().for_tab (tab) : null;
+            _people_btn.visible = d != null;
+            if (d != null) _people_count.label = "%d".printf (d.people ().length + 1);
+        }
+
+        private void fill_people (Popover pop) {
+            var tab = get_current_tab ();
+            var d = tab != null ? EditCollab.get_default ().for_tab (tab) : null;
+            var box = new Box (Orientation.VERTICAL, 4);
+            box.margin_start = box.margin_end = box.margin_top = box.margin_bottom = 6;
+            box.width_request = 260;
+            if (d == null) {
+                pop.child = box;
+                return;
+            }
+            foreach (var name in d.people ()) {
+                var row = new Box (Orientation.HORIZONTAL, 8);
+                var avatar = new Label (name.length >= 2 ? name.substring (0, 2).up () : name.up ());
+                avatar.add_css_class ("edit-collab-avatar");
+                var css = new CssProvider ();
+                string[] palette = { "#d97757", "#2a78d6", "#2ea043", "#8957e5", "#d4a72c", "#e5534b", "#0f9d9a" };
+                css.load_from_string ("label { background-color: %s; }".printf (palette[str_hash (name) % palette.length]));
+                avatar.get_style_context ().add_provider (css, STYLE_PROVIDER_PRIORITY_USER + 4);
+                row.append (avatar);
+                var label = new Label (name);
+                label.xalign = 0;
+                label.hexpand = true;
+                row.append (label);
+                var follow = new ToggleButton.with_label (d.following == name ? _("Following") : _("Follow"));
+                follow.active = d.following == name;
+                follow.add_css_class ("flat");
+                string who = name;
+                follow.toggled.connect (() => {
+                    d.following = follow.active ? who : null;
+                    follow.label = follow.active ? _("Following") : _("Follow");
+                });
+                row.append (follow);
+                box.append (row);
+            }
+            var actions = new Box (Orientation.HORIZONTAL, 6);
+            actions.halign = Align.END;
+            var invite = new Button.with_label (_("Invite"));
+            invite.add_css_class ("pill");
+            invite.clicked.connect (() => {
+                pop.popdown ();
+                d.session.pick_and_share (_people_btn, (person) => notify_user (_("Invitation sent to %s").printf (person.name)));
+            });
+            actions.append (invite);
+            var stop = new Button.with_label (d.session.hosting ? _("Stop Sharing") : _("Leave"));
+            stop.add_css_class ("pill");
+            stop.add_css_class ("destructive-action");
+            stop.clicked.connect (() => {
+                pop.popdown ();
+                EditCollab.get_default ().stop (tab);
+            });
+            actions.append (stop);
+            box.append (actions);
+            pop.child = box;
+        }
+
+        public void edit_together () {
+            var tab = get_current_tab ();
+            if (tab == null) return;
+            if (!EditCollab.available ()) {
+                notify_user (_("Turn on Nearby to edit together"));
+                return;
+            }
+            EditCollab.get_default ().share (this, tab, _people_btn.visible ? (Widget) _people_btn : (Widget) _problems_btn.get_parent ());
+        }
+
+        public void run_task (TaskDef task) {
+            foreach (var d in documents ()) if (d.get_modified ()) d.save ();
+            workbench.show_view ("tasks");
+            _tasks.run (task);
+        }
+
+        public void run_build_task () {
+            var root = get_project_root ();
+            if (root == null || root.get_path () == null) return;
+            foreach (var t in TaskDetector.detect (root.get_path ())) {
+                if (t.build) {
+                    run_task (t);
+                    return;
+                }
+            }
+            notify_user (_("No build task found for this project"));
+        }
+
+        public void search_project () {
+            string? seed = null;
+            var tab = get_current_tab ();
+            if (tab != null) {
+                Gtk.TextIter s, e;
+                if (tab.buffer.get_selection_bounds (out s, out e) && s.get_line () == e.get_line ())
+                    seed = tab.buffer.get_text (s, e, false);
+            }
+            if (!_sidebar_visible) toggle_sidebar ();
+            workbench.show_view ("search");
+            _search.focus_query (seed);
+        }
+
+        public void format_document () {
+            var tab = get_current_tab ();
+            if (tab != null && tab.lsp != null) tab.lsp.format.begin ();
         }
 
         //  Find / Go-to-line
@@ -785,6 +1169,55 @@ namespace Singularity.Apps {
             items.add (new CommandPaletteItem (
                 "preferences-system-symbolic", "Preferences", null,
                 null, "Command", () => show_preferences ()));
+
+            foreach (var item in workbench.get_commands ())
+                items.add (item);
+            var task_root = get_project_root ();
+            if (task_root != null && task_root.get_path () != null) {
+                foreach (var task in TaskDetector.detect (task_root.get_path ())) {
+                    var t = task;
+                    items.add (new CommandPaletteItem (
+                        "system-run-symbolic", _("Run Task: %s").printf (t.label), null,
+                        t.build ? "Ctrl+Shift+B" : null, _("Tasks"), () => run_task (t)));
+                }
+            }
+            if (get_current_tab () != null && EditCollab.available ())
+                items.add (new CommandPaletteItem (
+                    "system-users-symbolic", _("Edit Together"), null,
+                    null, _("Share"), () => edit_together ()));
+            items.add (new CommandPaletteItem (
+                "system-search-symbolic", _("Search in Project"), null,
+                "Ctrl+Shift+F", _("Search"), () => search_project ()));
+            if (get_current_tab () != null) {
+                items.add (new CommandPaletteItem (
+                    "edit-debug-symbolic", debug.active ? _("Continue") : _("Start Debugging"), null,
+                    "F5", _("Debug"), () => debug.start_or_continue ()));
+                items.add (new CommandPaletteItem (
+                    "edit-breakpoint", _("Toggle Breakpoint"), null,
+                    "F9", _("Debug"), () => debug.toggle_breakpoint ()));
+                if (debug.active)
+                    items.add (new CommandPaletteItem (
+                        "media-playback-stop-symbolic", _("Stop Debugging"), null,
+                        "Shift+F5", _("Debug"), () => debug.stop ()));
+            }
+            var lsp_tab = get_current_tab ();
+            if (lsp_tab != null && lsp_tab.lsp != null && lsp_tab.lsp.client != null) {
+                items.add (new CommandPaletteItem (
+                    "go-jump-symbolic", _("Go to Definition"), null,
+                    "F12", _("Language"), () => goto_definition ()));
+                items.add (new CommandPaletteItem (
+                    "format-justify-left-symbolic", _("Format Document"), lsp_tab.lsp.client.language,
+                    "Shift+Alt+F", _("Language"), () => format_document ()));
+                items.add (new CommandPaletteItem (
+                    "edit-symbolic", _("Rename Symbol"), null,
+                    "F2", _("Language"), () => rename_symbol ()));
+                items.add (new CommandPaletteItem (
+                    "dialog-information-symbolic", _("Quick Fix"), null,
+                    "Ctrl+.", _("Language"), () => quick_fix ()));
+                items.add (new CommandPaletteItem (
+                    "dialog-error-symbolic", _("Show Problems"), null,
+                    null, _("Language"), () => workbench.show_view ("problems")));
+            }
 
             var cur = get_current_tab ();
             if (cur != null && cur.is_markdown) {

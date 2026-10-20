@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<snippets _group="Python">
+  <snippet _name="Function" trigger="def" _description="Function">
+    <text languages="python;python3"><![CDATA[def ${1:name}(${2}):
+    ${0:pass}]]></text>
+  </snippet>
+  <snippet _name="Class" trigger="class" _description="Class">
+    <text languages="python;python3"><![CDATA[class ${1:Name}:
+    def __init__(self${2}):
+        ${0:pass}]]></text>
+  </snippet>
+  <snippet _name="Main" trigger="main" _description="Run as a script">
+    <text languages="python;python3"><![CDATA[if __name__ == "__main__":
+    ${0:main()}]]></text>
+  </snippet>
+  <snippet _name="Test" trigger="test" _description="pytest test">
+    <text languages="python;python3"><![CDATA[def test_${1:name}():
+    ${0:assert True}]]></text>
+  </snippet>
+</snippets>

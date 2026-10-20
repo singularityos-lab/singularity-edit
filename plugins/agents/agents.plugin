@@ -1,0 +1,6 @@
+[Plugin]
+Module=edit-agents
+Name=Agents
+Description=Claude Code, Codex, Gemini CLI, Copilot and the ACP registry agents inside Edit, with Plan, Ask First, Auto Edit and Autopilot modes
+Icon=singularity-agents-symbolic
+X-Singularity-Host=dev.sinty.edit

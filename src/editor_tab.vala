@@ -9,7 +9,7 @@ namespace Singularity.Apps {
     // =========================================================================
     // EditorTab - single editor pane (view + minimap + find bar)
     // =========================================================================
-    public class EditorTab : Box {
+    public class EditorTab : Box, Singularity.Edit.Document {
         public GtkSource.View   view   { get; private set; }
         public GtkSource.Buffer buffer { get; private set; }
         public GLib.File?       file   { get; set; }
@@ -17,6 +17,24 @@ namespace Singularity.Apps {
         public bool             modified { get; private set; default = false; }
         public FindBar find_bar { get; private set; }
         public bool is_markdown { get; private set; default = false; }
+        public LspDocument? lsp { get; private set; }
+        public signal void lsp_changed (EditorTab tab);
+
+        public GLib.File? get_file () { return file; }
+        public string? get_language_id () { return buffer.language != null ? buffer.language.id : null; }
+        public GtkSource.Buffer get_buffer () { return buffer; }
+        public GtkSource.View get_view () { return view; }
+        public bool get_modified () { return modified; }
+
+        public string[] get_diagnostics () {
+            string[] out_ = {};
+            if (lsp == null) return out_;
+            foreach (var d in lsp.diagnostics.data) {
+                string sev = d.severity == 1 ? "error" : (d.severity == 2 ? "warning" : "info");
+                out_ += "%d:%d %s %s".printf (d.line + 1, d.col + 1, sev, d.message);
+            }
+            return out_;
+        }
 
         private GtkSource.Map   minimap;
         private Gtk.CssProvider font_provider;
@@ -72,6 +90,7 @@ namespace Singularity.Apps {
             buffer.highlight_matching_brackets = true;
 
             view = new Singularity.Widgets.SourceView.with_buffer (buffer);
+            view.get_completion ().add_provider (new GtkSource.CompletionSnippets ());
             view.monospace                       = true;
             view.auto_indent                     = true;
             view.smart_backspace                 = true;
@@ -360,6 +379,7 @@ namespace Singularity.Apps {
                 refresh_title ();
                 add_to_recent ();
                 setup_autosave ();
+                loaded ();
             } catch (Error e) {
                 warning ("load_file: %s", e.message);
             }
@@ -383,6 +403,8 @@ namespace Singularity.Apps {
             _outline_entries = {};
             outline_changed (this);
 
+            start_lsp (lang);
+
             var ts_def = TsLangRegistry.get_default ().lookup_for_file (file);
             if (ts_def != null) {
                 buffer.highlight_syntax = false;
@@ -405,6 +427,23 @@ namespace Singularity.Apps {
                 _md_parser = new Markdown.Parser ();
                 buffer.changed.connect (schedule_md_update);
             }
+        }
+
+        private void start_lsp (GtkSource.Language? lang) {
+            if (lsp != null) {
+                lsp.detach ();
+                lsp = null;
+            }
+            if (lang == null || LspManager.get_default ().spec_for (lang.id, file) == null) {
+                lsp_changed (this);
+                return;
+            }
+            lsp = new LspDocument (this, lang.id);
+            lsp.diagnostics_changed.connect (() => lsp_changed (this));
+            lsp.attach.begin ((obj, res) => {
+                lsp.attach.end (res);
+                lsp_changed (this);
+            });
         }
 
         public void toggle_md_preview () {
@@ -470,6 +509,13 @@ namespace Singularity.Apps {
 
         public void save () {
             if (file == null) { save_as (); return; }
+            if (lsp != null && settings != null && settings.get_boolean ("format-on-save") && lsp.can_format ()) {
+                lsp.format.begin ((obj, res) => {
+                    lsp.format.end (res);
+                    write_to_disk ();
+                });
+                return;
+            }
             write_to_disk ();
         }
 
@@ -485,6 +531,8 @@ namespace Singularity.Apps {
                 modified = false;
                 refresh_title ();
                 add_to_recent ();
+                if (lsp != null) lsp.saved ();
+                saved ();
                 var window = get_root () as Singularity.Widgets.Window;
                 if (window != null) CloudActions.sync_back (window, file);
             } catch (Error e) {
@@ -688,6 +736,20 @@ namespace Singularity.Apps {
             }
         }
 
+        public void goto_position (int line, int column) {
+            int n = int.min (int.max (0, line), buffer.get_line_count () - 1);
+            Gtk.TextIter it;
+            buffer.get_iter_at_line (out it, n);
+            if (column > 0) {
+                Gtk.TextIter end = it;
+                if (!end.ends_line ()) end.forward_to_line_end ();
+                it.set_line_offset (int.min (column, end.get_line_offset ()));
+            }
+            buffer.place_cursor (it);
+            view.scroll_to_iter (it, 0.2, false, 0.0, 0.0);
+            view.grab_focus ();
+        }
+
         public void goto_line (int line_num) {
             int n = int.max (0, line_num - 1);
             n = int.min (n, buffer.get_line_count () - 1);
@@ -742,6 +804,7 @@ namespace Singularity.Apps {
         ~EditorTab () {
             if (autosave_id != 0) Source.remove (autosave_id);
             if (_ts_highlighter != null) _ts_highlighter.detach ();
+            if (lsp != null) lsp.detach ();
         }
 
         //  Tree-sitter outline + folding wiring

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<snippets _group="Vala">
+  <snippet _name="Class" trigger="class" _description="GObject class">
+    <text languages="vala"><![CDATA[public class ${1:Name} : Object {
+    public $1 () {
+        $0
+    }
+}]]></text>
+  </snippet>
+  <snippet _name="Property" trigger="prop" _description="Automatic property">
+    <text languages="vala"><![CDATA[public ${1:string} ${2:name} { get; set; }]]></text>
+  </snippet>
+  <snippet _name="Async method" trigger="async" _description="Async method">
+    <text languages="vala"><![CDATA[public async ${1:void} ${2:name} () throws Error {
+    $0
+}]]></text>
+  </snippet>
+</snippets>

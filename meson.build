@@ -14,6 +14,7 @@ gtk_dep       = dependency('gtk4')
 gee_dep       = dependency('gee-0.8')
 gtksource_dep = dependency('gtksourceview-5')
 webkit_dep    = dependency('webkitgtk-6.0')
+json_dep      = dependency('json-glib-1.0')
 
 libsingularity_dep = dependency('singularity-1.0',
   fallback: ['libsingularity', 'libsingularity_dep']
@@ -87,6 +88,29 @@ resources = gnome.compile_resources(
   dependencies: main_ui
 )
 
+edit_lib = shared_library('singularity-edit-1',
+  files('lib/api.vala', 'lib/workbench.vala'),
+  dependencies: [gtk_dep, gtksource_dep, libsingularity_dep],
+  vala_header: 'singularity-edit.h',
+  vala_vapi: 'singularity-edit-1.vapi',
+  version: '1.0.0',
+  install: true,
+  install_dir: [true, get_option('includedir') / 'singularity-edit-1', get_option('datadir') / 'vala' / 'vapi'],
+)
+edit_lib_dep = declare_dependency(
+  link_with: edit_lib,
+  include_directories: include_directories('.'),
+  dependencies: [gtk_dep, gtksource_dep, libsingularity_dep],
+)
+pkgconfig = import('pkgconfig')
+pkgconfig.generate(edit_lib,
+  name: 'singularity-edit-1',
+  description: 'Plugin API for Singularity Edit',
+  subdirs: 'singularity-edit-1',
+  requires: ['gtk4', 'gtksourceview-5', 'singularity-1.0'],
+)
+install_data('lib/singularity-edit-1.deps', install_dir: get_option('datadir') / 'vala' / 'vapi')
+
 sources = files(
   'src/main.vala',
   'src/status_bar.vala',
@@ -98,21 +122,60 @@ sources = files(
   'src/app.vala',
   'src/cloud_actions.vala',
   'src/ts_lang_registry.vala',
+  'src/ts_predicates.vala',
   'src/ts_highlighter.vala',
   'src/ts_outline.vala',
   'src/ts_folding.vala',
+  'src/lsp/lsp_client.vala',
+  'src/lsp/lsp_edits.vala',
+  'src/lsp/lsp_manager.vala',
+  'src/lsp/lsp_document.vala',
+  'src/lsp/problems_view.vala',
+  'src/dap/dap_client.vala',
+  'src/dap/debug_session.vala',
+  'src/dap/debug_targets.vala',
+  'src/dap/debug_views.vala',
+  'src/dap/debug_controller.vala',
+  'src/project/tasks.vala',
+  'src/project/project_search.vala',
+  'src/collab/edit_collab.vala',
   'src/tree-sitter.vapi',
 )
 
 executable('singularity-edit',
   sources + [resources],
-  dependencies: [gtk_dep, gee_dep, gtksource_dep, webkit_dep, libsingularity_dep, ts_dep],
+  dependencies: [gtk_dep, gee_dep, gtksource_dep, webkit_dep, json_dep, libsingularity_dep, ts_dep, edit_lib_dep],
+  install_rpath: get_option('prefix') / get_option('libdir'),
   install: true
+)
+
+test_queries = executable('test-queries',
+  files('tests/test_queries.vala', 'src/ts_lang_registry.vala',
+        'src/ts_predicates.vala', 'src/tree-sitter.vapi'),
+  dependencies: [gtk_dep, ts_dep],
+)
+test('queries', test_queries,
+  env: ['SINGULARITY_EDIT_TEST_QUERIES=' + meson.current_source_dir() / 'data' / 'queries'],
+)
+
+test('line-diff', executable('test-line-diff', files('tests/test_line_diff.vala'),
+  dependencies: [gtk_dep, gee_dep, libsingularity_dep]))
+
+executable('test-plugin-catalog', files('tests/test_plugin_catalog.vala'),
+  dependencies: [gtk_dep, gee_dep, libsingularity_dep, dependency('libpeas-2')])
+
+install_subdir('data/snippets',
+  install_dir: get_option('datadir') / 'singularity-edit',
+  strip_directory: false,
 )
 
 install_subdir('data/queries',
   install_dir: get_option('datadir') / 'singularity-edit',
   strip_directory: false,
+)
+
+install_data('data/capabilities/dev.sinty.Collab.Code1.ini',
+  install_dir: get_option('datadir') / 'singularity' / 'capabilities'
 )
 
 install_data('data/dev.sinty.edit.desktop',
@@ -127,3 +190,5 @@ install_data('data/dev.sinty.edit.json',
 install_data('data/icons/dev.sinty.edit.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps'
 )
+
+subdir('plugins')

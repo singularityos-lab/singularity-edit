@@ -1,5 +1,6 @@
 using Gtk;
 using GLib;
+using Singularity.Edit;
 using Singularity;
 using Singularity.Widgets;
 
@@ -8,12 +9,92 @@ namespace Singularity.Apps {
     // =========================================================================
     // EditApp - Singularity.Application subclass
     // =========================================================================
-    public class EditApp : Singularity.Application {
+    public class EditApp : Singularity.Application, Singularity.Edit.Host {
         private weak EditWindow? edit_win;
         private GLib.Settings? settings;
         private GLib.Settings? desktop_settings;
 
         private bool pending_new_file = false;
+        private AppPluginHost? plugin_host;
+        private uint collab_bus_id = 0;
+
+        public override bool dbus_register (DBusConnection connection, string object_path) throws Error {
+            if (!base.dbus_register (connection, object_path)) return false;
+            collab_bus_id = connection.register_object ("/dev/sinty/edit/Collab", new CodeCollabBus (this));
+            return true;
+        }
+
+        public override void dbus_unregister (DBusConnection connection, string object_path) {
+            if (collab_bus_id != 0) connection.unregister_object (collab_bus_id);
+            collab_bus_id = 0;
+            base.dbus_unregister (connection, object_path);
+        }
+
+        public Gtk.Application get_host_application () { return this; }
+
+        public Singularity.Edit.Workspace[] workspaces () {
+            Singularity.Edit.Workspace[] out_ = {};
+            foreach (var w in get_windows ()) {
+                var ew = w as EditWindow;
+                if (ew != null && ew.workspace_ready) out_ += ew;
+            }
+            return out_;
+        }
+
+        private EditorTab? find_tab (GLib.File file) {
+            foreach (var w in get_windows ()) {
+                var ew = w as EditWindow;
+                if (ew == null) continue;
+                foreach (var d in ew.documents ()) {
+                    var t = d as EditorTab;
+                    if (t != null && t.file != null && t.file.equal (file)) return t;
+                }
+            }
+            return null;
+        }
+
+        private void apply_workspace_edit (Json.Object edit, bool utf8) {
+            var map = LspEdits.by_uri (edit);
+            foreach (var uri in map.get_keys ()) {
+                var file = GLib.File.new_for_uri (uri);
+                var tab = find_tab (file);
+                if (tab == null) {
+                    var win = active_edit_window ();
+                    if (win == null) continue;
+                    win.open_file (file);
+                    tab = find_tab (file);
+                }
+                if (tab != null) LspEdits.apply (tab.buffer, map.lookup (uri), utf8);
+            }
+        }
+
+        internal void announce_workspace (EditWindow w) {
+            workspace_added (w);
+        }
+
+        private void setup_snippets () {
+            var manager = GtkSource.SnippetManager.get_default ();
+            string[] path = manager.search_path;
+            foreach (var dir in Environment.get_system_data_dirs ()) {
+                var candidate = Path.build_filename (dir, "singularity-edit", "snippets");
+                if (FileUtils.test (candidate, FileTest.IS_DIR) && !(candidate in path)) path += candidate;
+            }
+            var user = Path.build_filename (Environment.get_user_data_dir (), "singularity-edit", "snippets");
+            if (!(user in path)) path += user;
+            manager.search_path = path;
+        }
+
+        private void setup_plugins () {
+            window_removed.connect ((w) => {
+                var ws = w as Singularity.Edit.Workspace;
+                if (ws != null) workspace_removed (ws);
+            });
+            plugin_host = new AppPluginHost ("dev.sinty.edit", "edit", AppPluginHost.desktop_settings ());
+            plugin_host.add_extension_type (typeof (Singularity.Edit.Plugin));
+            plugin_host.extension_added.connect ((info, ext) => ((Singularity.Edit.Plugin) ext).activate (this));
+            plugin_host.extension_removed.connect ((info, ext) => ((Singularity.Edit.Plugin) ext).deactivate ());
+            plugin_host.load ();
+        }
 
         public EditApp () {
             Object (application_id: "dev.sinty.edit",
@@ -41,10 +122,18 @@ namespace Singularity.Apps {
         protected override void startup () {
             base.startup ();
             setup_styles ();
+            setup_snippets ();
             settings = load_settings ();
             setup_actions ();
             setup_accels ();
             set_menubar (build_app_menu ());
+            setup_plugins ();
+            LspManager.get_default ().workspace_edit.connect (apply_workspace_edit);
+            DebugManager.get_default ().session_changed.connect (() => {
+                bool debugging = DebugManager.get_default ().session != null;
+                set_accels_for_action ("app.fullscreen", debugging ? new string[0] : new string[] { "F11" });
+                set_accels_for_action ("app.debug-step-into", debugging ? new string[] { "F11" } : new string[0]);
+            });
 
             // Re-apply colour scheme when accent or dark-mode changes
             desktop_settings = Singularity.Core.safe_settings ("dev.sinty.desktop");
@@ -207,6 +296,19 @@ namespace Singularity.Apps {
             add_act ("next-tab",       on_next_tab);
             add_act ("previous-tab",   on_previous_tab);
             add_act ("command-palette", on_command_palette);
+            add_act ("goto-definition", on_goto_definition);
+            add_act ("format-document", on_format_document);
+            add_act ("rename-symbol", on_rename_symbol);
+            add_act ("run-build-task", () => active_edit_window ()?.run_build_task ());
+            add_act ("search-project", () => active_edit_window ()?.search_project ());
+            add_act ("debug-start", () => active_edit_window ()?.debug.start_or_continue ());
+            add_act ("debug-stop", () => active_edit_window ()?.debug.stop ());
+            add_act ("debug-restart", () => active_edit_window ()?.debug.restart ());
+            add_act ("debug-step-over", () => active_edit_window ()?.debug.step ("next"));
+            add_act ("debug-step-into", () => active_edit_window ()?.debug.step ("stepIn"));
+            add_act ("debug-step-out", () => active_edit_window ()?.debug.step ("stepOut"));
+            add_act ("toggle-breakpoint", () => active_edit_window ()?.debug.toggle_breakpoint ());
+            add_act ("quick-fix", on_quick_fix);
             notify["active-window"].connect (() => sync_document_actions ());
 
             var act_settings = new SimpleAction ("settings", null);
@@ -297,6 +399,18 @@ namespace Singularity.Apps {
             set_accels_for_action ("app.find",           {"<Ctrl>f"});
             set_accels_for_action ("app.find-replace",   {"<Ctrl>h"});
             set_accels_for_action ("app.goto-line",      {"<Ctrl>g"});
+            set_accels_for_action ("app.goto-definition", {"F12"});
+            set_accels_for_action ("app.format-document", {"<Shift><Alt>f"});
+            set_accels_for_action ("app.rename-symbol", {"F2"});
+            set_accels_for_action ("app.run-build-task", {"<Ctrl><Shift>b"});
+            set_accels_for_action ("app.search-project", {"<Ctrl><Shift>f"});
+            set_accels_for_action ("app.debug-start", {"F5"});
+            set_accels_for_action ("app.debug-stop", {"<Shift>F5"});
+            set_accels_for_action ("app.debug-restart", {"<Ctrl><Shift>F5"});
+            set_accels_for_action ("app.debug-step-over", {"F10"});
+            set_accels_for_action ("app.debug-step-out", {"<Shift>F11"});
+            set_accels_for_action ("app.toggle-breakpoint", {"F9"});
+            set_accels_for_action ("app.quick-fix", {"<Ctrl>period"});
             set_accels_for_action ("app.select-all",     {"<Ctrl>a"});
             set_accels_for_action ("app.duplicate-line", {"<Ctrl>d"});
             set_accels_for_action ("app.comment-toggle", {"<Ctrl>slash"});
@@ -306,7 +420,7 @@ namespace Singularity.Apps {
             set_accels_for_action ("app.zoom-in",        {"<Ctrl>plus", "<Ctrl>equal"});
             set_accels_for_action ("app.zoom-out",       {"<Ctrl>minus"});
             set_accels_for_action ("app.zoom-reset",     {"<Ctrl>0"});
-            set_accels_for_action ("app.toggle-sidebar", {"F9"});
+            set_accels_for_action ("app.toggle-sidebar", {"<Ctrl>b"});
             set_accels_for_action ("app.toggle-minimap", {"<Alt>m"});
             set_accels_for_action ("app.toggle-md-preview", {"<Ctrl><Shift>m"});
             set_accels_for_action ("app.fullscreen",     {"F11"});
@@ -378,7 +492,7 @@ namespace Singularity.Apps {
         }
         private void on_open_online () {
             var w = active_edit_window ();
-            if (w != null) CloudActions.open.begin (w, (f) => w.open_file (f));
+            if (w != null) CloudActions.open.begin (w, (f) => { w.open_file (f); });
         }
         private void on_close_tab ()      { active_edit_window ()?.close_current_tab (); }
         private void on_quit ()           { quit (); }
@@ -410,6 +524,10 @@ namespace Singularity.Apps {
         private void on_next_tab ()       { active_edit_window ()?.cycle_tab (1); }
         private void on_previous_tab ()   { active_edit_window ()?.cycle_tab (-1); }
         private void on_command_palette () { active_edit_window ()?.open_command_palette (); }
+        private void on_goto_definition () { active_edit_window ()?.goto_definition (); }
+        private void on_format_document () { active_edit_window ()?.format_document (); }
+        private void on_rename_symbol () { active_edit_window ()?.rename_symbol (); }
+        private void on_quick_fix () { active_edit_window ()?.quick_fix (); }
 
         private void setup_styles () {
             var provider = new Gtk.CssProvider ();
@@ -417,7 +535,81 @@ namespace Singularity.Apps {
             Gtk.StyleContext.add_provider_for_display (
                 Gdk.Display.get_default (), provider,
                 Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
+            var overlays = new Gtk.CssProvider ();
+            overlays.load_from_data (OVERLAY_CSS.data);
+            Gtk.StyleContext.add_provider_for_display (
+                Gdk.Display.get_default (), overlays,
+                Gtk.STYLE_PROVIDER_PRIORITY_USER + 3);
         }
+
+        private const string OVERLAY_CSS = """
+GtkSourceAssistant > contents {
+    background-color: @popover_bg_color;
+    color: @popover_fg_color;
+    border-radius: 12px;
+    border: 1px solid alpha(@text_color, 0.10);
+    box-shadow: 0 6px 24px alpha(black, 0.18);
+    padding: 4px;
+}
+GtkSourceAssistant {
+    background: none;
+    box-shadow: none;
+    border: none;
+}
+GtkSourceAssistant.completion list {
+    background: transparent;
+}
+GtkSourceAssistant.completion list row {
+    border-radius: 7px;
+    min-height: 24px;
+}
+GtkSourceAssistant.completion list row:selected {
+    background-color: alpha(@accent_color, 0.16);
+    color: @popover_fg_color;
+}
+GtkSourceAssistant.completion list row cell {
+    padding: 0 6px;
+}
+GtkSourceAssistant.completion list row cell.after,
+GtkSourceAssistant.completion list row cell.before {
+    color: alpha(@popover_fg_color, 0.55);
+}
+GtkSourceAssistant.completion box.details {
+    border-top: 1px solid alpha(@text_color, 0.08);
+    padding: 6px 8px;
+}
+.edit-collab-flag {
+    padding: 1px 7px;
+    border-radius: 999px;
+    color: white;
+    font-family: "Noto Sans";
+    font-size: 10px;
+    font-weight: 700;
+}
+.edit-collab-avatar {
+    min-width: 22px;
+    min-height: 22px;
+    padding: 0;
+    border-radius: 999px;
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+}
+.edit-problems {
+    background-color: @view_bg_color;
+}
+.edit-problems-list {
+    background: transparent;
+}
+.edit-problems-list row {
+    border-radius: 8px;
+    margin: 0 6px;
+}
+.edit-problems-list row:selected {
+    background-color: alpha(@accent_color, 0.16);
+    color: @view_fg_color;
+}
+""";
 
         private const string EDIT_CSS = """
 /* Edit App */
@@ -469,7 +661,29 @@ namespace Singularity.Apps {
     font-weight: 600;
 }
 
-/* Outline bottom dock */
+.edit-region-header {
+    padding: 0 8px;
+}
+.edit-region-sidebar .edit-region-header {
+    padding: 0 12px;
+}
+.edit-region-inspector {
+    min-width: 360px;
+    border-left: 1px solid alpha(@text_color, 0.1);
+}
+.edit-region-panel {
+    min-height: 210px;
+    border-top: 1px solid alpha(@text_color, 0.1);
+    background-color: alpha(@shadow_color, 0.25);
+}
+.edit-region-panel .edit-region-header {
+    padding: 8px 8px 0 12px;
+}
+.edit-region-panel .sidebar-tabs {
+    margin-bottom: 4px;
+}
+.edit-status-item image.error { color: #e5534b; }
+.edit-status-item image.warning { color: #d4a72c; }
 .edit-outline-panel {
     background-color: alpha(@shadow_color, 0.35);
     border-top: 1px solid alpha(@text_color, 0.1);

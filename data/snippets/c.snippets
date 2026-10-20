@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<snippets _group="C">
+  <snippet _name="Main" trigger="main" _description="main function">
+    <text languages="c;cpp"><![CDATA[int main(int argc, char **argv) {
+    $0
+    return 0;
+}]]></text>
+  </snippet>
+  <snippet _name="For loop" trigger="for" _description="Counting loop">
+    <text languages="c;cpp"><![CDATA[for (${1:int} ${2:i} = 0; $2 < ${3:n}; $2++) {
+    $0
+}]]></text>
+  </snippet>
+  <snippet _name="Include guard" trigger="guard" _description="Header guard">
+    <text languages="chdr;cpphdr"><![CDATA[#ifndef ${1:NAME_H}
+#define $1
+
+$0
+
+#endif]]></text>
+  </snippet>
+</snippets>

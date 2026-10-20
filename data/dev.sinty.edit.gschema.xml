@@ -56,6 +56,11 @@
       <summary>Auto Save Interval</summary>
       <description>Interval in seconds between auto-saves.</description>
     </key>
+    <key name="format-on-save" type="b">
+      <default>true</default>
+      <summary>Format on Save</summary>
+      <description>Whether to format documents with the language server before saving.</description>
+    </key>
     <key name="show-minimap" type="b">
       <default>false</default>
       <summary>Show Minimap</summary>

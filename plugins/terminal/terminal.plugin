@@ -1,0 +1,7 @@
+[Plugin]
+Module=edit-terminal
+Name=Terminal
+Description=A Leafs terminal in the bottom panel, opened in the project folder
+Icon=dev.sinty.leafs
+X-Singularity-App=dev.sinty.edit
+X-Singularity-Host=dev.sinty.edit

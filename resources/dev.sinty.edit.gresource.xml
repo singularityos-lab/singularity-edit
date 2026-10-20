@@ -2,5 +2,11 @@
 <gresources>
   <gresource prefix="/dev/sinty/edit">
     <file preprocess="xml-stripblanks">ui/main.ui</file>
+    <file alias="icons/scalable/actions/edit-diagnostic-error.svg">data/icons/scalable/actions/edit-diagnostic-error.svg</file>
+    <file alias="icons/scalable/actions/edit-diagnostic-warning.svg">data/icons/scalable/actions/edit-diagnostic-warning.svg</file>
+    <file alias="icons/scalable/actions/edit-diagnostic-info.svg">data/icons/scalable/actions/edit-diagnostic-info.svg</file>
+    <file alias="icons/scalable/actions/edit-breakpoint.svg">data/icons/scalable/actions/edit-breakpoint.svg</file>
+    <file alias="icons/scalable/actions/edit-debug-current.svg">data/icons/scalable/actions/edit-debug-current.svg</file>
+    <file alias="icons/scalable/actions/edit-debug-symbolic.svg">data/icons/scalable/actions/edit-debug-symbolic.svg</file>
   </gresource>
 </gresources>

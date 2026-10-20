@@ -33,6 +33,12 @@
             "widget": "switch"
         },
         {
+            "key": "format-on-save",
+            "label": "Format on Save",
+            "type": "boolean",
+            "widget": "switch"
+        },
+        {
             "key": "wrap-text",
             "label": "Wrap Text",
             "type": "boolean",

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<snippets _group="Rust">
+  <snippet _name="Function" trigger="fn" _description="Function">
+    <text languages="rust"><![CDATA[fn ${1:name}(${2}) ${3:-> ()} {
+    $0
+}]]></text>
+  </snippet>
+  <snippet _name="Test" trigger="test" _description="Unit test">
+    <text languages="rust"><![CDATA[#[test]
+fn ${1:it_works}() {
+    $0
+}]]></text>
+  </snippet>
+  <snippet _name="Match" trigger="match" _description="Match expression">
+    <text languages="rust"><![CDATA[match ${1:value} {
+    ${2:pattern} => $0,
+    _ => {}
+}]]></text>
+  </snippet>
+  <snippet _name="Struct" trigger="struct" _description="Struct">
+    <text languages="rust"><![CDATA[#[derive(Debug, Clone)]
+struct ${1:Name} {
+    $0
+}]]></text>
+  </snippet>
+</snippets>

@@ -44,6 +44,11 @@ namespace Singularity.Apps {
             append (outline_btn);
         }
 
+        public void attach_items (Box start, Box end) {
+            insert_child_after (start, words_lbl);
+            insert_child_after (end, start.get_next_sibling ());
+        }
+
         public void set_outline_available (bool available) {
             outline_btn.sensitive = available;
             if (!available) outline_btn.active = false;

@@ -1,0 +1,7 @@
+[Plugin]
+Module=edit-git
+Name=Git
+Description=Changed lines in the gutter, branch and commit from the status bar, and the Git app one click away
+Icon=dev.sinty.git
+X-Singularity-App=dev.sinty.edit
+X-Singularity-Host=dev.sinty.edit
