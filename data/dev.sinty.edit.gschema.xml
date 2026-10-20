@@ -56,6 +56,11 @@
       <summary>Auto Save Interval</summary>
       <description>Interval in seconds between auto-saves.</description>
     </key>
+    <key name="agents-ollama-url" type="s">
+      <default>'http://localhost:11434'</default>
+      <summary>Ollama Address</summary>
+      <description>Address of the Ollama server used by the Ollama agent.</description>
+    </key>
     <key name="format-on-save" type="b">
       <default>true</default>
       <summary>Format on Save</summary>

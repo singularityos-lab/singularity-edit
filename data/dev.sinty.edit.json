@@ -39,6 +39,13 @@
             "widget": "switch"
         },
         {
+            "key": "agents-ollama-url",
+            "label": "Ollama Address",
+            "subtitle": "Server used by the Ollama agent",
+            "type": "string",
+            "widget": "entry"
+        },
+        {
             "key": "wrap-text",
             "label": "Wrap Text",
             "type": "boolean",

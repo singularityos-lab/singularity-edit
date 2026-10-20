@@ -22,7 +22,7 @@ namespace EditAgents {
 
     public class AgentCatalog : Object {
         public const string REGISTRY = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
-        public const string[] FEATURED = { "claude-acp", "codex-acp", "gemini", "github-copilot-cli" };
+        public const string[] FEATURED = { "claude-acp", "codex-acp", "gemini", "github-copilot-cli", "ollama" };
 
         private const string FALLBACK = """{"agents":[
 {"id":"claude-acp","name":"Claude Agent","description":"Claude Code by Anthropic","distribution":{"npx":{"package":"@agentclientprotocol/claude-agent-acp"}}},
@@ -111,6 +111,15 @@ namespace EditAgents {
                     a.distribution = o.get_object_member ("distribution");
                     a.hosts = hosts_for (a.id);
                     list.add (a);
+                    if (a.id == "opencode") {
+                        var local = new AgentEntry ();
+                        local.id = "ollama";
+                        local.name = "Ollama";
+                        local.description = _("Local models through Ollama, run by OpenCode");
+                        local.distribution = a.distribution;
+                        local.hosts = hosts_for (local.id);
+                        list.add (local);
+                    }
                 }
                 list.sort ((x, y) => {
                     int fx = index_of_featured (x.id);
@@ -168,6 +177,7 @@ namespace EditAgents {
                 case "codex-acp": own = { "openai.com", "chatgpt.com" }; break;
                 case "gemini": own = { "googleapis.com", "google.com" }; break;
                 case "github-copilot-cli": own = { "githubcopilot.com", "github.com", "githubusercontent.com" }; break;
+                case "ollama": own = { "localhost", "127.0.0.1" }; break;
                 default: own = {}; break;
             }
             string[] all = {};
@@ -253,9 +263,68 @@ namespace EditAgents {
             } else {
                 throw new IOError.NOT_SUPPORTED (requirement (a));
             }
+            if (a.id == "ollama") env += "OPENCODE_CONFIG_CONTENT=" + yield ollama_config (cancel);
             l.argv = argv;
             l.env = env;
             return l;
+        }
+
+        public static string ollama_url () {
+            var schema = SettingsSchemaSource.get_default ().lookup ("dev.sinty.edit", true);
+            if (schema != null && schema.has_key ("agents-ollama-url")) {
+                string url = new GLib.Settings ("dev.sinty.edit").get_string ("agents-ollama-url").strip ();
+                if (url != "") return url.has_suffix ("/") ? url.substring (0, url.length - 1) : url;
+            }
+            return "http://localhost:11434";
+        }
+
+        private async string ollama_config (Cancellable? cancel) throws Error {
+            string url = ollama_url ();
+            var session = new Soup.Session ();
+            session.timeout = 4;
+            var msg = new Soup.Message ("GET", url + "/api/tags");
+            if (msg == null) throw new IOError.INVALID_ARGUMENT (_("The Ollama address %s is not valid: change it in Settings, Edit").printf (url));
+            Bytes bytes;
+            try {
+                bytes = yield session.send_and_read_async (msg, Priority.DEFAULT, cancel);
+            } catch (Error e) {
+                throw new IOError.CONNECTION_REFUSED (_("Ollama is not running at %s. Start it with ollama serve, or change the address in Settings, Edit").printf (url));
+            }
+            if (msg.status_code != 200) throw new IOError.FAILED (_("Ollama at %s answered %u").printf (url, msg.status_code));
+            var parser = new Json.Parser ();
+            parser.load_from_data ((string) bytes.get_data (), (ssize_t) bytes.get_size ());
+            var root = parser.get_root ().get_object ();
+            var models = new Json.Object ();
+            string first = "";
+            if (root.has_member ("models")) {
+                var arr = root.get_array_member ("models");
+                for (uint i = 0; i < arr.get_length (); i++) {
+                    var m = arr.get_object_element (i);
+                    if (!m.has_member ("name")) continue;
+                    string name = m.get_string_member ("name");
+                    var entry = new Json.Object ();
+                    entry.set_string_member ("name", name);
+                    models.set_object_member (name, entry);
+                    if (first == "") first = name;
+                }
+            }
+            if (first == "") throw new IOError.NOT_FOUND (_("Ollama has no models yet. Download one with ollama pull, for example ollama pull qwen2.5-coder"));
+            var options = new Json.Object ();
+            options.set_string_member ("baseURL", url + "/v1");
+            var provider = new Json.Object ();
+            provider.set_string_member ("npm", "@ai-sdk/openai-compatible");
+            provider.set_string_member ("name", "Ollama");
+            provider.set_object_member ("options", options);
+            provider.set_object_member ("models", models);
+            var providers = new Json.Object ();
+            providers.set_object_member ("ollama", provider);
+            var config = new Json.Object ();
+            config.set_string_member ("$schema", "https://opencode.ai/config.json");
+            config.set_object_member ("provider", providers);
+            config.set_string_member ("model", "ollama/" + first);
+            var node = new Json.Node (Json.NodeType.OBJECT);
+            node.set_object (config);
+            return Json.to_string (node, false);
         }
 
         private async string install_binary (string id, Json.Object spec, Cancellable? cancel) throws Error {
