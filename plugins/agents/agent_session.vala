@@ -138,7 +138,7 @@ namespace EditAgents {
         private uint deadline;
         private Cancellable cancel = new Cancellable ();
 
-        public Json.Object? mcp { get; set; }
+        public McpServer? mcp { get; set; }
         public Json.Array? auth_methods { get; private set; }
         public bool needs_auth { get; private set; }
         public string? auth_method { get; set; }
@@ -215,7 +215,8 @@ namespace EditAgents {
                 var neu = new Json.Object ();
                 neu.set_string_member ("cwd", root);
                 var servers = new Json.Array ();
-                if (mcp != null) servers.add_object_element (mcp);
+                var server = mcp != null ? mcp.descriptor (dsh) : null;
+                if (server != null) servers.add_object_element (server);
                 neu.set_array_member ("mcpServers", servers);
                 Json.Node? created;
                 try {

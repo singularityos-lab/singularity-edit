@@ -7,28 +7,44 @@ namespace EditAgents {
         private unowned Workspace workspace;
         private SocketService service = new SocketService ();
         public string socket_path { get; private set; }
+        public string dsh_socket_path { get; private set; default = ""; }
 
         public McpServer (Workspace ws) {
             workspace = ws;
             string dir = Environment.get_user_runtime_dir ();
             socket_path = Path.build_filename (dir, "singularity-edit-mcp-%d-%u.sock".printf ((int) Posix.getpid (), Random.next_int ()));
+            service.incoming.connect ((conn) => {
+                serve.begin (conn);
+                return true;
+            });
             try {
                 SocketAddress effective;
                 service.add_address (new UnixSocketAddress (socket_path), SocketType.STREAM, SocketProtocol.DEFAULT, null, out effective);
-                service.incoming.connect ((conn) => {
-                    serve.begin (conn);
-                    return true;
-                });
-                service.start ();
             } catch (Error e) {
                 socket_path = "";
             }
+            var dsh = Dsh.get_default ();
+            if (dsh != null) {
+                string cache = Path.build_filename (dsh.host_root, ".cache", "singularity-edit");
+                string path = Path.build_filename (cache, "mcp-%d.sock".printf ((int) Posix.getpid ()));
+                try {
+                    DirUtils.create_with_parents (cache, 0700);
+                    FileUtils.unlink (path);
+                    SocketAddress effective;
+                    service.add_address (new UnixSocketAddress (path), SocketType.STREAM, SocketProtocol.DEFAULT, null, out effective);
+                    dsh_socket_path = path;
+                } catch (Error e) {
+                    dsh_socket_path = "";
+                }
+            }
+            service.start ();
         }
 
         public void stop () {
             service.stop ();
             service.close ();
             if (socket_path != "") FileUtils.unlink (socket_path);
+            if (dsh_socket_path != "") FileUtils.unlink (dsh_socket_path);
         }
 
         public static string? bridge_path () {
@@ -41,15 +57,16 @@ namespace EditAgents {
             return Environment.find_program_in_path ("singularity-edit-mcp");
         }
 
-        public Json.Object? descriptor () {
+        public Json.Object? descriptor (Dsh? dsh = null) {
             var bridge = bridge_path ();
-            if (socket_path == "" || bridge == null) return null;
+            string path = dsh != null ? dsh.to_guest (dsh_socket_path) : socket_path;
+            if (path == "" || bridge == null) return null;
             var o = new Json.Object ();
             o.set_string_member ("name", "singularity-edit");
             o.set_string_member ("command", bridge);
             var args = new Json.Array ();
             args.add_string_element ("--socket");
-            args.add_string_element (socket_path);
+            args.add_string_element (path);
             o.set_array_member ("args", args);
             o.set_array_member ("env", new Json.Array ());
             return o;

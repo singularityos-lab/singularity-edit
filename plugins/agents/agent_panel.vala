@@ -401,7 +401,7 @@ namespace EditAgents {
             retry_prompt = first_prompt;
             session = new AgentSession (agent, workspace, project_root (), mode);
             session.auth_method = auth_method;
-            if (mcp != null) session.mcp = mcp.descriptor ();
+            session.mcp = mcp;
             connect_session (session);
             sync_status ();
             add_note (mode == Mode.AUTOPILOT ? _("Creating a restore point and starting %s in Autopilot").printf (agent.name) : _("Starting %s").printf (agent.name));
