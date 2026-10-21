@@ -201,11 +201,17 @@ namespace EditAgents {
             return "linux-" + arch;
         }
 
+        private static bool have (string program) {
+            if (Environment.find_program_in_path (program) != null) return true;
+            var dsh = Singularity.Edit.Dsh.get_default ();
+            return dsh != null && dsh.has_program (program);
+        }
+
         public bool runnable (AgentEntry a) {
             var d = a.distribution;
             if (d.has_member ("local")) return true;
-            if (d.has_member ("npx") && Environment.find_program_in_path ("npx") != null) return true;
-            if (d.has_member ("uvx") && Environment.find_program_in_path ("uvx") != null) return true;
+            if (d.has_member ("npx") && have ("npx")) return true;
+            if (d.has_member ("uvx") && have ("uvx")) return true;
             if (d.has_member ("binary") && d.get_object_member ("binary").has_member (platform ())) return true;
             return false;
         }
@@ -242,12 +248,12 @@ namespace EditAgents {
                 var spec = d.get_object_member ("local");
                 argv += spec.get_string_member ("command");
                 argv = with_args (argv, spec);
-            } else if (d.has_member ("npx") && Environment.find_program_in_path ("npx") != null) {
+            } else if (d.has_member ("npx") && have ("npx")) {
                 var spec = d.get_object_member ("npx");
                 argv = { "npx", "-y", spec.get_string_member ("package") };
                 argv = with_args (argv, spec);
                 env = with_env (env, spec);
-            } else if (d.has_member ("uvx") && Environment.find_program_in_path ("uvx") != null) {
+            } else if (d.has_member ("uvx") && have ("uvx")) {
                 var spec = d.get_object_member ("uvx");
                 argv = { "uvx", spec.get_string_member ("package") };
                 argv = with_args (argv, spec);
