@@ -99,6 +99,7 @@ namespace EditAgents {
         private bool stick = true;
         private bool settling;
         private Label? last_label;
+        private StringBuilder last_text = new StringBuilder ();
         private HashTable<string, ToolCard> cards = new HashTable<string, ToolCard> (str_hash, str_equal);
         private Box? plan_card;
         private Widget? flag;
@@ -506,12 +507,16 @@ namespace EditAgents {
 
         private void add_text (string role, string text) {
             if (role == last_role && last_label != null && role != "user") {
-                last_label.label = last_label.label + text;
+                last_text.append (text);
+                show_text (last_label, role, last_text.str);
                 scroll_down ();
                 return;
             }
             last_role = role;
-            var l = new Label (role == "user" ? text : text.chug ());
+            last_text.truncate ();
+            last_text.append (role == "user" ? text : text.chug ());
+            var l = new Label (null);
+            show_text (l, role, last_text.str);
             l.xalign = 0;
             l.wrap = true;
             l.wrap_mode = Pango.WrapMode.WORD_CHAR;
@@ -529,6 +534,26 @@ namespace EditAgents {
             last_label = l;
             conv.append (l);
             scroll_down ();
+        }
+
+        private void show_text (Label l, string role, string text) {
+            if (role == "user" || role == "error") {
+                l.use_markup = false;
+                l.label = text;
+                return;
+            }
+            string markup = AgentMarkdown.to_pango (text);
+            try {
+                Pango.AttrList attrs;
+                string plain;
+                unichar accel;
+                var links = new Regex ("</?a( [^>]*)?>");
+                Pango.parse_markup (links.replace (markup, -1, 0, ""), -1, 0, out attrs, out plain, out accel);
+                l.set_markup (markup);
+            } catch (Error e) {
+                l.use_markup = false;
+                l.label = text;
+            }
         }
 
         private void add_tool (ToolCall call) {
