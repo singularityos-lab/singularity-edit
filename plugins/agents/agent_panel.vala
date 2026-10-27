@@ -396,6 +396,7 @@ namespace EditAgents {
         }
 
         private string? retry_prompt;
+        private Widget? sign_in_card;
 
         private async void start_session (string first_prompt, string? auth_method = null) {
             retry_prompt = first_prompt;
@@ -406,6 +407,7 @@ namespace EditAgents {
             sync_status ();
             add_note (mode == Mode.AUTOPILOT ? _("Creating a restore point and starting %s in Autopilot").printf (agent.name) : _("Starting %s").printf (agent.name));
             if (!yield session.start ()) return;
+            drop_sign_in ();
             run_prompt (first_prompt);
         }
 
@@ -669,7 +671,13 @@ namespace EditAgents {
             return argv;
         }
 
+        private void drop_sign_in () {
+            if (sign_in_card != null && sign_in_card.get_parent () == conv) conv.remove (sign_in_card);
+            sign_in_card = null;
+        }
+
         private void add_sign_in (Json.Array? methods, bool in_dsh) {
+            drop_sign_in ();
             last_role = null;
             var chosen = agent;
             var card = new Box (Orientation.VERTICAL, 8);
@@ -767,6 +775,7 @@ namespace EditAgents {
             });
             card.append (forget);
             conv.append (card);
+            sign_in_card = card;
             scroll_down ();
         }
 
