@@ -269,6 +269,8 @@ namespace Singularity.Apps {
 
         //  apply
 
+        private static Singularity.Compute? compute;
+
         private void apply_highlights () {
             if (def.highlights_query == null || current_tree == null) return;
 
@@ -282,10 +284,30 @@ namespace Singularity.Apps {
                 }
             });
 
-            // Captures arrive sorted by start byte (next_capture iterates
-            // left-to-right). We walk a monotonic byte->char cursor and use
-            // g_utf8_strlen for each delta; this is O(N) total per pass.
             string text = buffer.get_text (s, e, true);
+            if (compute == null) compute = new Singularity.Compute ();
+            uint8[] spans = compute.call (1, Singularity.Compute.key ("edit-highlights:" + def.name, text.data),
+                                          () => { return collect_spans (text); });
+
+            uint32* v = (uint32*) spans;
+            for (int i = 0; i + 2 < spans.length / 4; i += 3) {
+                uint32 name_len = 0;
+                unowned string capture_name = def.highlights_query.capture_name_for_id (v[i + 2], out name_len);
+                if (capture_name == null) continue;
+                var tag = tag_for_capture (capture_name);
+                if (tag == null) continue;
+                Gtk.TextIter ts_it, te_it;
+                buffer.get_iter_at_offset (out ts_it, (int) v[i]);
+                buffer.get_iter_at_offset (out te_it, (int) v[i + 1]);
+                buffer.apply_tag (tag, ts_it, te_it);
+            }
+        }
+
+        // Captures arrive sorted by start byte (next_capture iterates
+        // left-to-right). We walk a monotonic byte->char cursor and use
+        // g_utf8_strlen for each delta; this is O(N) total per pass.
+        private uint8[] collect_spans (string text) {
+            uint32[] spans = {};
             char* text_ptr  = (char*) text.data;
             int   text_blen = text.length;
             uint32 cursor_byte = 0;
@@ -301,13 +323,6 @@ namespace Singularity.Apps {
                     !def.highlights_predicates.accepts (match, text_ptr, text_blen))
                     continue;
                 unowned TS.QueryCapture cap = match.captures[cap_idx];
-                uint32 name_len = 0;
-                unowned string capture_name = def.highlights_query.capture_name_for_id (
-                    cap.index, out name_len);
-                if (capture_name == null) continue;
-
-                var tag = tag_for_capture (capture_name);
-                if (tag == null) continue;
 
                 uint32 sb = cap.node.start_byte ();
                 uint32 eb = cap.node.end_byte ();
@@ -315,8 +330,7 @@ namespace Singularity.Apps {
                 if ((int) eb > text_blen) continue;
 
                 // Captures can overlap (nested @keyword inside @function): if
-                // sb is behind the cursor, rewind from start (cheap enough
-                // compared to GTK tag apply).
+                // sb is behind the cursor, rewind from start.
                 if (sb < cursor_byte) {
                     cursor_byte = 0;
                     cursor_off  = 0;
@@ -327,15 +341,16 @@ namespace Singularity.Apps {
                     cursor_byte = sb;
                 }
                 int char_start = cursor_off;
-
                 int char_end = char_start + ((string)(text_ptr + sb)).char_count (
                     (ssize_t) (eb - sb));
 
-                Gtk.TextIter ts_it, te_it;
-                buffer.get_iter_at_offset (out ts_it, char_start);
-                buffer.get_iter_at_offset (out te_it, char_end);
-                buffer.apply_tag (tag, ts_it, te_it);
+                spans += (uint32) char_start;
+                spans += (uint32) char_end;
+                spans += cap.index;
             }
+            uint8[] out_bytes = new uint8[spans.length * 4];
+            if (spans.length > 0) Memory.copy (out_bytes, spans, out_bytes.length);
+            return out_bytes;
         }
     }
 }
