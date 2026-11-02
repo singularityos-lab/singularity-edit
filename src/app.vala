@@ -121,6 +121,7 @@ namespace Singularity.Apps {
 
         protected override void startup () {
             base.startup ();
+            EditIntents.install (this);
             setup_styles ();
             setup_snippets ();
             settings = load_settings ();

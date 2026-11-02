@@ -120,6 +120,7 @@ sources = files(
   'src/markdown.vala',
   'src/window.vala',
   'src/app.vala',
+  'src/agent_intents.vala',
   'src/cloud_actions.vala',
   'src/ts_lang_registry.vala',
   'src/ts_predicates.vala',
