@@ -172,40 +172,100 @@ namespace Singularity.Apps {
             });
         }
 
-        private void populate_tree () {
-            while (list_box.get_row_at_index (0) != null)
-                list_box.remove (list_box.get_row_at_index (0));
-            clear_monitors ();
-            add_children (project_root, 0);
-            if (selected_file == null) list_box.unselect_all ();
+        private class Entry : Object {
+            public GLib.File file;
+            public string name;
+            public bool is_dir;
+            public int depth;
+            public bool open;
         }
 
-        private void add_children (GLib.File dir, int depth) {
-            watch (dir);
-            GLib.List<GLib.FileInfo> dirs  = new GLib.List<GLib.FileInfo> ();
-            GLib.List<GLib.FileInfo> files = new GLib.List<GLib.FileInfo> ();
-            try {
-                var en = dir.enumerate_children ("standard::name,standard::type", GLib.FileQueryInfoFlags.NONE);
-                GLib.FileInfo? fi;
-                while ((fi = en.next_file ()) != null) {
-                    if (fi.get_name ().has_prefix (".")) continue;
-                    if (fi.get_file_type () == GLib.FileType.DIRECTORY) dirs.append (fi);
-                    else files.append (fi);
-                }
-            } catch (Error e) {
-                warning ("File browser: %s", e.message);
-                return;
+        private uint _generation = 0;
+        private Cancellable? _scan_cancel = null;
+
+        private Cancellable restart_scan () {
+            if (_scan_cancel != null) _scan_cancel.cancel ();
+            _scan_cancel = new Cancellable ();
+            _generation++;
+            return _scan_cancel;
+        }
+
+        private static void scan_dir (GLib.File dir, int depth, GenericSet<string>? open_dirs,
+                                      GenericArray<Entry> out_entries, Cancellable c) throws Error {
+            var dirs  = new GenericArray<GLib.FileInfo> ();
+            var files = new GenericArray<GLib.FileInfo> ();
+            var en = dir.enumerate_children ("standard::name,standard::type", GLib.FileQueryInfoFlags.NONE, c);
+            GLib.FileInfo? fi;
+            while ((fi = en.next_file (c)) != null) {
+                if (fi.get_name ().has_prefix (".")) continue;
+                if (fi.get_file_type () == GLib.FileType.DIRECTORY) dirs.add (fi);
+                else files.add (fi);
             }
             dirs.sort  ((a, b) => strcmp (a.get_name (), b.get_name ()));
             files.sort ((a, b) => strcmp (a.get_name (), b.get_name ()));
-            foreach (var d in dirs) {
-                var child = dir.get_child (d.get_name ());
-                bool open = expanded.contains (child.get_path ());
-                append_tree_row (child, d.get_name (), true, depth, open);
-                if (open) add_children (child, depth + 1);
+            foreach (var d in dirs.data) {
+                var e = new Entry ();
+                e.file = dir.get_child (d.get_name ());
+                e.name = d.get_name ();
+                e.is_dir = true;
+                e.depth = depth;
+                e.open = open_dirs != null && open_dirs.contains (e.file.get_path ());
+                out_entries.add (e);
+                if (e.open) {
+                    try {
+                        scan_dir (e.file, depth + 1, open_dirs, out_entries, c);
+                    } catch (IOError.CANCELLED err) {
+                        throw err;
+                    } catch (Error err) {
+                    }
+                }
             }
-            foreach (var f in files)
-                append_tree_row (dir.get_child (f.get_name ()), f.get_name (), false, depth, false);
+            foreach (var f in files.data) {
+                var e = new Entry ();
+                e.file = dir.get_child (f.get_name ());
+                e.name = f.get_name ();
+                e.depth = depth;
+                out_entries.add (e);
+            }
+        }
+
+        private void clear_rows () {
+            while (list_box.get_row_at_index (0) != null)
+                list_box.remove (list_box.get_row_at_index (0));
+        }
+
+        private void populate_tree () {
+            populate_tree_async.begin ();
+        }
+
+        private async void populate_tree_async () {
+            var c = restart_scan ();
+            uint gen = _generation;
+            var root = project_root;
+            var open_dirs = new GenericSet<string> (str_hash, str_equal);
+            foreach (var k in expanded.get_values ()) open_dirs.add (k);
+            GenericArray<Entry> entries;
+            try {
+                entries = yield Singularity.Async.run<GenericArray<Entry>> ((cc) => {
+                    var list = new GenericArray<Entry> ();
+                    scan_dir (root, 0, open_dirs, list, cc);
+                    return list;
+                }, Singularity.Async.Qos.INTERACTIVE, c);
+            } catch (Error e) {
+                if (e is IOError.CANCELLED) return;
+                warning ("File browser: %s", e.message);
+                if (gen == _generation) clear_rows ();
+                return;
+            }
+            if (gen != _generation || root != project_root) return;
+            clear_rows ();
+            clear_monitors ();
+            watch (root);
+            foreach (var e in entries.data) {
+                if (e.is_dir && e.open) watch (e.file);
+                append_tree_row (e.file, e.name, e.is_dir, e.depth, e.open);
+            }
+            if (selected_file == null) list_box.unselect_all ();
         }
 
         private void append_tree_row (GLib.File file, string name, bool is_dir, int depth, bool open) {
@@ -254,38 +314,31 @@ namespace Singularity.Apps {
         }
 
         private void populate () {
-            while (list_box.get_row_at_index (0) != null)
-                list_box.remove (list_box.get_row_at_index (0));
+            populate_async.begin ();
+        }
 
-            if (current_dir.get_parent () != null)
-                append_row (null, "..", true);
-
+        private async void populate_async () {
+            var c = restart_scan ();
+            uint gen = _generation;
+            var dir = current_dir;
+            GenericArray<Entry> entries;
             try {
-                var en = current_dir.enumerate_children (
-                    "standard::name,standard::type",
-                    GLib.FileQueryInfoFlags.NONE);
-
-                GLib.List<GLib.FileInfo> dirs  = new GLib.List<GLib.FileInfo> ();
-                GLib.List<GLib.FileInfo> files = new GLib.List<GLib.FileInfo> ();
-
-                GLib.FileInfo? fi;
-                while ((fi = en.next_file ()) != null) {
-                    if (fi.get_name ().has_prefix (".")) continue;
-                    if (fi.get_file_type () == GLib.FileType.DIRECTORY)
-                        dirs.append (fi);
-                    else
-                        files.append (fi);
-                }
-                dirs.sort  ((a, b) => strcmp (a.get_name (), b.get_name ()));
-                files.sort ((a, b) => strcmp (a.get_name (), b.get_name ()));
-
-                foreach (var d in dirs)
-                    append_row (current_dir.get_child (d.get_name ()), d.get_name (), true);
-                foreach (var f in files)
-                    append_row (current_dir.get_child (f.get_name ()), f.get_name (), false);
+                entries = yield Singularity.Async.run<GenericArray<Entry>> ((cc) => {
+                    var list = new GenericArray<Entry> ();
+                    scan_dir (dir, 0, null, list, cc);
+                    return list;
+                }, Singularity.Async.Qos.INTERACTIVE, c);
             } catch (Error e) {
+                if (e is IOError.CANCELLED) return;
                 warning ("File browser: %s", e.message);
+                entries = new GenericArray<Entry> ();
             }
+            if (gen != _generation || dir != current_dir) return;
+            clear_rows ();
+            if (dir.get_parent () != null)
+                append_row (null, "..", true);
+            foreach (var e in entries.data)
+                append_row (e.file, e.name, e.is_dir);
         }
 
         private void append_row (GLib.File? file, string name, bool is_dir) {

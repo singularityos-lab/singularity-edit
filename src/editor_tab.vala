@@ -364,25 +364,71 @@ namespace Singularity.Apps {
 
         //  File I/O
 
+        private const int64 SYNC_LOAD_LIMIT = 512 * 1024;
+        private bool _loading = false;
+        private int _pending_line = -1;
+        private int _pending_column = -1;
+
         private void load_file () {
             if (file == null) return;
+            if (load_in_background ()) {
+                load_file_async.begin ();
+                return;
+            }
             try {
                 uint8[] data;
                 string  etag;
                 file.load_contents (null, out data, out etag);
-                buffer.begin_irreversible_action ();
-                buffer.text = (string) data;
-                buffer.end_irreversible_action ();
-                buffer.set_modified (false);
-                modified = false;
-                detect_language ();
-                refresh_title ();
-                add_to_recent ();
-                setup_autosave ();
-                loaded ();
+                apply_loaded ((string) data);
             } catch (Error e) {
                 warning ("load_file: %s", e.message);
             }
+        }
+
+        private bool load_in_background () {
+            if (!file.is_native ()) return true;
+            try {
+                var info = file.query_info (FileAttribute.STANDARD_SIZE, FileQueryInfoFlags.NONE);
+                return info.get_size () > SYNC_LOAD_LIMIT;
+            } catch (Error e) {
+                return false;
+            }
+        }
+
+        private async void load_file_async () {
+            var source = file;
+            _loading = true;
+            view.editable = false;
+            try {
+                var text = yield Singularity.Async.run<string> ((c) => {
+                    uint8[] data;
+                    source.load_contents (c, out data, null);
+                    return (string) (owned) data;
+                }, Singularity.Async.Qos.USER);
+                if (file == source)
+                    apply_loaded (text);
+            } catch (Error e) {
+                warning ("load_file: %s", e.message);
+            }
+            _loading = false;
+            view.editable = true;
+            if (_pending_line >= 0) {
+                goto_position (_pending_line, _pending_column);
+                _pending_line = -1;
+            }
+        }
+
+        private void apply_loaded (string text) {
+            buffer.begin_irreversible_action ();
+            buffer.text = text;
+            buffer.end_irreversible_action ();
+            buffer.set_modified (false);
+            modified = false;
+            detect_language ();
+            refresh_title ();
+            add_to_recent ();
+            setup_autosave ();
+            loaded ();
         }
 
         private void detect_language () {
@@ -737,6 +783,11 @@ namespace Singularity.Apps {
         }
 
         public void goto_position (int line, int column) {
+            if (_loading) {
+                _pending_line = line;
+                _pending_column = column;
+                return;
+            }
             int n = int.min (int.max (0, line), buffer.get_line_count () - 1);
             Gtk.TextIter it;
             buffer.get_iter_at_line (out it, n);
