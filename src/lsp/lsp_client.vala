@@ -38,10 +38,24 @@ namespace Singularity.Apps {
             Object (language: language, root_path: root_path);
         }
 
+        private Singularity.BackgroundWork? background = null;
+
+        private void follow_active_window (Singularity.BackgroundWork work) {
+            background = work;
+            var app = GLib.Application.get_default () as Gtk.Application;
+            if (app == null) return;
+            if (app.active_window != null) work.follow (app.active_window);
+            app.notify["active-window"].connect (() => {
+                if (background == work && app.active_window != null) work.follow (app.active_window);
+            });
+        }
+
         public void start (string[] argv) throws Error {
             var launcher = new SubprocessLauncher (SubprocessFlags.STDIN_PIPE | SubprocessFlags.STDOUT_PIPE | SubprocessFlags.STDERR_PIPE);
             launcher.set_cwd (root_path);
+            launcher.set_child_setup (Singularity.BackgroundWork.lower);
             proc = launcher.spawnv (dsh != null ? dsh.wrap (argv, root_path) : argv);
+            follow_active_window (Singularity.BackgroundWork.for_process (int.parse (proc.get_identifier ())));
             input = new DataInputStream (proc.get_stdout_pipe ());
             input.newline_type = DataStreamNewlineType.ANY;
             output = proc.get_stdin_pipe ();
@@ -49,6 +63,7 @@ namespace Singularity.Apps {
             read_loop.begin ();
             read_stderr.begin (new DataInputStream (proc.get_stderr_pipe ()));
             proc.wait_async.begin (null, () => {
+                background.finish ();
                 alive = false;
                 fail_pending ("language server exited");
                 exited ();
