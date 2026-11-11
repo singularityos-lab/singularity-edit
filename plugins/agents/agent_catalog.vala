@@ -22,7 +22,7 @@ namespace EditAgents {
 
     public class AgentCatalog : Object {
         public const string REGISTRY = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
-        public const string[] FEATURED = { "claude-acp", "codex-acp", "gemini", "github-copilot-cli", "ollama" };
+        public const string[] FEATURED = { "sinty-ai", "claude-acp", "codex-acp", "gemini", "github-copilot-cli", "ollama" };
 
         private const string FALLBACK = """{"agents":[
 {"id":"claude-acp","name":"Claude Agent","description":"Claude Code by Anthropic","distribution":{"npx":{"package":"@agentclientprotocol/claude-agent-acp"}}},
@@ -47,6 +47,7 @@ namespace EditAgents {
             parse (cached ?? FALLBACK);
             if (cached == null || cache_age () > 3600) refresh.begin ();
             add_custom ();
+            add_system ();
         }
 
         private static string cache_path () {
@@ -87,6 +88,7 @@ namespace EditAgents {
                         DirUtils.create_with_parents (Path.get_dirname (cache_path ()), 0755);
                         FileUtils.set_contents (cache_path (), text);
                         add_custom ();
+                        add_system ();
                         changed ();
                     }
                 }
@@ -164,6 +166,24 @@ namespace EditAgents {
             }
         }
 
+        private void add_system () {
+            var program = Environment.find_program_in_path ("sinty");
+            if (program == null || lookup ("sinty-ai") != null) return;
+            var a = new AgentEntry ();
+            a.id = "sinty-ai";
+            a.name = "Sinty AI";
+            a.description = _("The assistant of this computer, with the provider chosen in Settings");
+            var cmd = new Json.Object ();
+            cmd.set_string_member ("command", program);
+            var args = new Json.Array ();
+            args.add_string_element ("acp");
+            cmd.set_array_member ("args", args);
+            a.distribution = new Json.Object ();
+            a.distribution.set_object_member ("local", cmd);
+            a.hosts = hosts_for (a.id);
+            entries.insert (0, a);
+        }
+
         private static int index_of_featured (string id) {
             for (int i = 0; i < FEATURED.length; i++) if (FEATURED[i] == id) return i;
             return FEATURED.length;
@@ -178,6 +198,7 @@ namespace EditAgents {
                 case "gemini": own = { "googleapis.com", "google.com" }; break;
                 case "github-copilot-cli": own = { "githubcopilot.com", "github.com", "githubusercontent.com" }; break;
                 case "ollama": own = { "localhost", "127.0.0.1" }; break;
+                case "sinty-ai": own = { "localhost", "127.0.0.1", "anthropic.com", "claude.ai", "openai.com", "chatgpt.com", "ollama.com" }; break;
                 default: own = {}; break;
             }
             string[] all = {};
