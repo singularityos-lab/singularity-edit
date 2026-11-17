@@ -382,6 +382,7 @@ namespace Singularity.Apps {
                     string key = file.get_path ();
                     if (expanded.contains (key)) expanded.remove (key);
                     else expanded.add (key);
+                    selected_file = file;
                     populate_tree ();
                 } else {
                     selected_file = file;
