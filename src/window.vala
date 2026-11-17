@@ -944,11 +944,6 @@ namespace Singularity.Apps {
             if (tab != null) tab.toggle_md_preview ();
         }
 
-        public void toggle_fullscreen () {
-            if (is_fullscreen ()) unfullscreen ();
-            else                  fullscreen ();
-        }
-
         //  Preferences
 
         public void show_preferences () {
