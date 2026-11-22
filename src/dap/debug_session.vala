@@ -49,7 +49,8 @@ namespace Singularity.Apps {
             if (tab.file == null || tab.file.get_path () == null) return;
             var list = lines.lookup (tab.file.get_path ());
             if (list == null) return;
-            foreach (var l in list.data) {
+            for (int i = 0; i < list.length; i++) {
+                int l = list[i];
                 if (l >= tab.buffer.get_line_count ()) continue;
                 Gtk.TextIter it;
                 tab.buffer.get_iter_at_line (out it, l);
@@ -82,7 +83,7 @@ namespace Singularity.Apps {
             while (tab.buffer.forward_iter_to_source_mark (ref it, BREAKPOINT)) {
                 int l = it.get_line ();
                 bool seen = false;
-                foreach (var x in list.data) if (x == l) seen = true;
+                for (int i = 0; i < list.length; i++) if (list[i] == l) seen = true;
                 if (!seen) list.add (l);
             }
             if (list.length == 0) lines.remove (tab.file.get_path ());
@@ -95,7 +96,10 @@ namespace Singularity.Apps {
 
         public int[] lines_for (string path) {
             var list = lines.lookup (path);
-            return list != null ? list.data : new int[0];
+            int[] result = {};
+            if (list == null) return result;
+            for (int i = 0; i < list.length; i++) result += list[i];
+            return result;
         }
 
         public void begin_session (DebugSession s) {
