@@ -195,4 +195,33 @@ install_data('data/icons/dev.sinty.edit.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps'
 )
 
+iride = find_program('iride', required: get_option('iride'))
+if iride.found()
+  custom_target('iride-icon',
+    input: 'data/icons/iride/iride.json',
+    output: 'dev.sinty.edit.iride',
+    depend_files: files(
+      'data/icons/iride/layers/000.svg',
+      'data/icons/iride/layers/001.svg',
+      'data/icons/iride/layers/002.svg',
+      'data/icons/iride/layers/003.svg',
+      'data/icons/iride/layers/004.svg',
+      'data/icons/iride/layers/005.svg',
+      'data/icons/iride/layers/006.svg',
+      'data/icons/iride/layers/007.svg',
+      'data/icons/iride/layers/008.svg',
+      'data/icons/iride/layers/009.svg',
+      'data/icons/iride/layers/010.svg',
+      'data/icons/iride/layers/011.svg',
+      'data/icons/iride/layers/tratto-0.svg',
+      'data/icons/iride/layers/tratto-1.svg',
+      'data/icons/iride/layers/tratto-2.svg',
+      'data/icons/iride/layers/tratto-3.svg',
+    ),
+    command: [iride, 'build', meson.current_source_dir() / 'data' / 'icons' / 'iride', '@OUTPUT@'],
+    install: true,
+    install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps'
+  )
+endif
+
 subdir('plugins')

@@ -1,0 +1,2 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="236" height="236" viewBox="0 0 236 236" fill="none"><defs><linearGradient id="ed_side" x1="0" y1="0" x2="0" y2="236" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#b8601a" /><stop offset="1" stop-color="#8a4414" /></linearGradient>
+</defs><g transform="translate(35.888 44.592) scale(.82)"><g transform="translate(0 9)"><path transform="rotate(-45 118 118)" d="M62 90L16 111.5Q4 118 16 124.5L62 146H186V148H206V146H212Q232 146 232 126V110Q232 90 212 90H206V88H186V90Z" fill="url(#ed_side)" /></g></g></svg>
