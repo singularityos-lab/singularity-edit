@@ -55,10 +55,18 @@ namespace Singularity.Apps {
         }
 
         public EditWindow (EditApp app, GLib.Settings? settings, bool restore_session = true) {
+            this.with_session (app, settings, restore_session, restore_session);
+        }
+
+        public EditWindow.migrated (EditApp app, GLib.Settings? settings, bool session_owner) {
+            this.with_session (app, settings, session_owner, false);
+        }
+
+        private EditWindow.with_session (EditApp app, GLib.Settings? settings, bool session_owner, bool restore_session) {
             Object (application: app);
             _app      = app;
             _settings = settings;
-            _session_owner = restore_session;
+            _session_owner = session_owner;
             if (!restore_session) _sidebar_visible = false;
             _build_ui ();
             var close_act = new SimpleAction ("close", null);
@@ -1374,6 +1382,69 @@ namespace Singularity.Apps {
             if (active >= 0 && active < (int)tab_container.get_n_pages ()) {
                 tab_container.notebook.set_current_page (active);
             }
+        }
+
+        public Variant save_migration () {
+            var tabs = new VariantBuilder (new VariantType ("as"));
+            int n = tab_container.get_n_pages ();
+            for (int i = 0; i < n; i++) {
+                var t = tab_container.notebook.get_nth_page (i) as EditorTab;
+                if (t == null) continue;
+                tabs.add ("s", t.file != null ? Singularity.Migration.portable_path (t.file) : "");
+            }
+            var project = _file_browser.project_root;
+            var dir = _file_browser.current_dir;
+            return new Variant.tuple ({
+                new Variant.string (project != null ? Singularity.Migration.portable_path (project) : ""),
+                new Variant.string (dir != null ? Singularity.Migration.portable_path (dir) : ""),
+                new Variant.boolean (_sidebar_visible),
+                tabs.end (),
+                new Variant.int32 (tab_container.notebook.get_current_page ())
+            });
+        }
+
+        public string[] migration_files () {
+            string[] files = {};
+            int n = tab_container.get_n_pages ();
+            for (int i = 0; i < n; i++) {
+                var t = tab_container.notebook.get_nth_page (i) as EditorTab;
+                if (t != null && t.file != null) files += Singularity.Migration.portable_path (t.file);
+            }
+            var project = _file_browser.project_root;
+            if (project != null) files += Singularity.Migration.portable_path (project);
+            return files;
+        }
+
+        public async void restore_migration (Variant data) {
+            string project = data.get_child_value (0).get_string ();
+            string dir = data.get_child_value (1).get_string ();
+            bool sidebar = data.get_child_value (2).get_boolean ();
+            var tabs = data.get_child_value (3);
+            int active = data.get_child_value (4).get_int32 ();
+            if (project != "") {
+                var p = Singularity.Migration.local_file (project);
+                if (p.query_file_type (FileQueryInfoFlags.NONE) == FileType.DIRECTORY) open_folder (p);
+            }
+            if (dir != "") {
+                var d = Singularity.Migration.local_file (dir);
+                if (d.query_file_type (FileQueryInfoFlags.NONE) == FileType.DIRECTORY) _file_browser.navigate_to (d);
+            }
+            _sidebar_visible = sidebar;
+            set_sidebar_visible (sidebar);
+            for (size_t i = 0; i < tabs.n_children (); i++) {
+                string path = tabs.get_child_value (i).get_string ();
+                _attach_tab (new EditorTab (path != "" ? Singularity.Migration.local_file (path) : null, _settings));
+            }
+            int n = tab_container.get_n_pages ();
+            for (int i = 0; i < n; i++) {
+                var t = tab_container.notebook.get_nth_page (i) as EditorTab;
+                while (t != null && t.loading) {
+                    ulong id = t.loaded.connect (() => restore_migration.callback ());
+                    yield;
+                    t.disconnect (id);
+                }
+            }
+            if (active >= 0 && active < n) tab_container.notebook.set_current_page (active);
         }
 
         public void save_session () {

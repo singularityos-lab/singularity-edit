@@ -15,6 +15,7 @@ namespace Singularity.Apps {
         public GLib.File?       file   { get; set; }
         public string           title  { get; private set; default = "Untitled"; }
         public bool             modified { get; private set; default = false; }
+        public bool             loading { get { return _loading; } }
         public FindBar find_bar { get; private set; }
         public bool is_markdown { get; private set; default = false; }
         public LspDocument? lsp { get; private set; }
@@ -107,6 +108,13 @@ namespace Singularity.Apps {
 
             scroll.set_child (view);
             editor_row.append (scroll);
+
+            buffer.modified_changed.connect (() => {
+                if (modified == buffer.get_modified ()) return;
+                modified = buffer.get_modified ();
+                refresh_title ();
+                state_changed (this);
+            });
 
             minimap = new GtkSource.Map ();
             minimap.set_view (view);

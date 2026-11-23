@@ -9,7 +9,7 @@ namespace Singularity.Apps {
     // =========================================================================
     // EditApp - Singularity.Application subclass
     // =========================================================================
-    public class EditApp : Singularity.Application, Singularity.Edit.Host {
+    public class EditApp : Singularity.Application, Singularity.Edit.Host, Singularity.Migration.Migratable {
         private weak EditWindow? edit_win;
         private GLib.Settings? settings;
         private GLib.Settings? desktop_settings;
@@ -459,6 +459,39 @@ namespace Singularity.Apps {
                 if (f.query_file_type (FileQueryInfoFlags.NONE) == FileType.DIRECTORY) window.open_folder (f);
                 else window.add_tab (f);
             }
+        }
+
+        public Variant save_model () {
+            return new VariantDict ().end ();
+        }
+
+        public async void restore_model (Variant model) throws Error {
+        }
+
+        public string window_kind (Gtk.Window window) {
+            return (window is EditWindow) ? "editor" : "";
+        }
+
+        public Variant save_window (Gtk.Window window) {
+            return ((EditWindow) window).save_migration ();
+        }
+
+        public string[] files () {
+            string[] all = {};
+            foreach (var window in get_windows ()) {
+                var edit_window = window as EditWindow;
+                if (edit_window == null) continue;
+                foreach (var f in edit_window.migration_files ()) all += f;
+            }
+            return all;
+        }
+
+        public async Gtk.Window? rebuild_window (string kind, Variant data) throws Error {
+            if (kind != "editor") return null;
+            var window = new EditWindow.migrated (this, settings, edit_win == null);
+            if (edit_win == null) edit_win = window;
+            yield window.restore_migration (data);
+            return window;
         }
 
         private EditWindow? active_edit_window () {
