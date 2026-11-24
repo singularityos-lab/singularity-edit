@@ -1410,8 +1410,6 @@ namespace Singularity.Apps {
                 var t = tab_container.notebook.get_nth_page (i) as EditorTab;
                 if (t != null && t.file != null) files += Singularity.Migration.portable_path (t.file);
             }
-            var project = _file_browser.project_root;
-            if (project != null) files += Singularity.Migration.portable_path (project);
             return files;
         }
 
