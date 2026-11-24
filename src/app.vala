@@ -9,7 +9,7 @@ namespace Singularity.Apps {
     // =========================================================================
     // EditApp - Singularity.Application subclass
     // =========================================================================
-    public class EditApp : Singularity.Application, Singularity.Edit.Host, Singularity.Migration.Migratable {
+    public class EditApp : Singularity.Application, Singularity.Edit.Host, Singularity.Migration.Migratable, Singularity.Startup.Bootable {
         private weak EditWindow? edit_win;
         private GLib.Settings? settings;
         private GLib.Settings? desktop_settings;
@@ -437,7 +437,38 @@ namespace Singularity.Apps {
 
         //  Lifecycle
 
-        protected override void activate () {
+        public Singularity.Startup.Plan build_plan (Singularity.Startup.Request request) {
+            var plan = new Singularity.Startup.Plan ();
+            plan.version = "edit-1";
+            if (request.kind == Singularity.Startup.RequestKind.SERVICE) {
+                plan.main ("ready", Singularity.Startup.Category.PREPARE, (c) => {})
+                    .reaches (Singularity.Startup.Milestone.SHELL_READY)
+                    .reaches (Singularity.Startup.Milestone.CONTENT_READY)
+                    .reaches (Singularity.Startup.Milestone.INTERACTIVE);
+                return plan;
+            }
+            var window = plan.main ("window", Singularity.Startup.Category.SHELL, (c) => {
+                show_window ();
+                c.window = edit_win;
+            }).reaches (Singularity.Startup.Milestone.SHELL_READY);
+            if (request.kind == Singularity.Startup.RequestKind.OPEN) {
+                var files = request.files ();
+                plan.main ("open-file", Singularity.Startup.Category.CONTENT, (c) => open_files (files))
+                    .depends_on ("window")
+                    .reaches (Singularity.Startup.Milestone.CONTENT_READY)
+                    .reaches (Singularity.Startup.Milestone.INTERACTIVE);
+            } else {
+                window.reaches (Singularity.Startup.Milestone.CONTENT_READY).reaches (Singularity.Startup.Milestone.INTERACTIVE);
+            }
+            return plan;
+        }
+
+        public void handle_request (Singularity.Startup.Request request) {
+            show_window ();
+            if (request.kind == Singularity.Startup.RequestKind.OPEN) open_files (request.files ());
+        }
+
+        private void show_window () {
             if (edit_win != null) {
                 edit_win.present ();
                 return;
@@ -451,8 +482,7 @@ namespace Singularity.Apps {
             }
         }
 
-        public override void open (GLib.File[] files, string hint) {
-            activate ();
+        private void open_files (GLib.File[] files) {
             var window = active_edit_window ();
             if (window == null) return;
             foreach (var f in files) {
